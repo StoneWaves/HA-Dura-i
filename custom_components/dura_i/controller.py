@@ -471,7 +471,7 @@ class Controller:
 
                 self.sensor_entities[
                     inverter.serial_number + "_battery_voltage"
-                ].set_native_value(battery_data.registers[6] / 10)
+                ].set_native_value(battery_data.registers[6] * 0.1)
 
                 self.sensor_entities[
                     inverter.serial_number + "_battery_current"

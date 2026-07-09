@@ -531,10 +531,6 @@ class Controller:
                     inverter.serial_number + "_ems_software_version"
                 ].set_native_value(inverter.ems_software_version)
 
-                self.sensor_entities[
-                    inverter.serial_number + "_dcdc_software_version"
-                ].set_native_value(inverter.dcdc_software_version)
-
                 self.switch_entities[
                     inverter.serial_number + "_match_feed_in_to_excess_power"
                 ].set_selected_option(self.match_feed_in_to_excess_power)

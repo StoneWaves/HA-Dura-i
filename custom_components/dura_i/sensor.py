@@ -499,21 +499,6 @@ async def async_setup_entry(
             stateClass=None,
         )
 
-        controller.sensor_entities[
-            inverter.serial_number + "_dcdc_software_version"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Version DC-DC",
-            "dcdc_software_version",
-            "mdi:code-block-tags",
-            category=EntityCategory.DIAGNOSTIC,
-            deviceClass=None,
-            unitOfMeasurement=None,
-            stateClass=None,
-        )
-
         # No point in the below as the inverter is always returning zero until Skylinefix it.
         # controller.sensor_entities[
         #    inverter.serial_number + "_battery_temp"

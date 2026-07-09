@@ -2,7 +2,7 @@
 
 from homeassistant.const import Platform
 
-DOMAIN = "cyg_skyline"
+DOMAIN = "dura_i"
 INVERTER_POLL_INTERVAL_SECONDS = 10
 IMPORT_EXPORT_MONITOR_DURATION_SECONDS = 120
 IMPORT_EXPORT_THRESHOLD = 0.1

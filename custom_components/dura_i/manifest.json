@@ -1,6 +1,6 @@
 {
-  "domain": "cyg_skyline",
-  "name": "Skyline Inverter",
+  "domain": "dura_i",
+  "name": "Dura I Inverter",
   "codeowners": [
     "@iPeel"
   ],

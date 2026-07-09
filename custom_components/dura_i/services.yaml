@@ -4,7 +4,7 @@ set_excess_params:
   target:
     entity:
       domain: sensor
-      integration: cyg_skyline
+      integration: dura_i
   fields:
     target_soc_percent:
       name: Target SoC percentage

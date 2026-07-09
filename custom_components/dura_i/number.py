@@ -266,4 +266,6 @@ class InverterNumberEntity(NumberEntity):
         self.currentValue = newValue
 
         self._attr_native_value = self.currentValue
-        self.async_write_ha_state()
+
+        if self.hass is not None:
+            self.async_write_ha_state()

@@ -109,4 +109,6 @@ class InverterBinarySensorEntity(BinarySensorEntity):
         self._attr_is_on = newValue
         self.currentValue = newValue
 
-        self._async_write_ha_state()
+        if self.hass is not None:
+            self._async_write_ha_state()
+

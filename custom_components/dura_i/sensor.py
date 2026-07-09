@@ -709,4 +709,6 @@ class InverterSensorEntity(SensorEntity):
         self.currentValue = new_state
 
         self._attr_native_value = new_state
-        self.async_write_ha_state()
+
+        if self.hass is not None:
+            self.async_write_ha_state()

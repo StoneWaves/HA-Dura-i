@@ -132,7 +132,8 @@ class InverterSwitchEntity(SwitchEntity):
 
         # self._attr_current_option = new_value
 
-        self.async_write_ha_state()
+        if self.hass is not None:
+            self.async_write_ha_state()
         self.currentValue = new_value
 
     async def async_turn_on(self, **kwargs) -> None:

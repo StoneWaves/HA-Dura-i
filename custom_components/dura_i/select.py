@@ -135,7 +135,8 @@ class InverterSelectEntity(SelectEntity):
         self.currentValue = value
 
         self._attr_current_option = value
-        self.async_write_ha_state()
+        if self.hass is not None:
+            self.async_write_ha_state()
 
     async def async_select_option(self, option: str) -> None:
         """Receive changes from HomeAssistant and push to the inverter."""

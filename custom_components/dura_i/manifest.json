@@ -2,7 +2,8 @@
   "domain": "dura_i",
   "name": "Dura I Inverter",
   "codeowners": [
-    "@iPeel"
+    "@iPeel",
+    "@StoneWaves"
   ],
   "config_flow": true,
   "dependencies": [],
@@ -12,5 +13,5 @@
   "requirements": ["pymodbus>=3.11.0"],
   "ssdp": [],
   "zeroconf": [],
-  "version": 0.3
+  "version": "0.4.0"
 }

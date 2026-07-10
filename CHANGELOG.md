@@ -26,3 +26,5 @@ Forked from [HA-Skyline](https://github.com/iPeel/HA-Skyline) v0.3 by @iPeel and
 - Removed DCDC version sensor exposure (not applicable to Dura-i)
 - Corrected battery voltage calculation in `set_native_value`
 - Ensured `async_write_ha_state` is only called when hass is available
+- Fixed number entities using wrong entity domain (`sensor` instead of `number`), resolving HA 2027.5.0 deprecation warning
+- Swapped grid energy in/out icons (import and export icons were reversed)

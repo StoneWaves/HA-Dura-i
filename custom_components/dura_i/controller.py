@@ -1,4 +1,4 @@
-"""Skyline communication and stats collection."""
+"""Dura-i communication and stats collection."""
 import asyncio
 import contextlib
 import logging
@@ -129,7 +129,7 @@ class Controller:
                     self.excess_load_entity_id_multiplier,
                 )
 
-        _LOGGER.info("Skyline controller starting")
+        _LOGGER.info("Dura-i controller starting")
 
     def aggregate(
         self,
@@ -213,19 +213,19 @@ class Controller:
                 await self.poll_inverters()
 
         task = self.config.async_create_background_task(
-            self.hass, periodic(), "Skyline Inverter Poll"
+            self.hass, periodic(), "Dura-i Inverter Poll"
         )
 
         self.poller_task = task
 
     async def poll_inverters(self):
         """Poll all inverters."""
-        skyline_pv_power = float(0)
-        skyline_battery_load = float(0)
-        skyline_grid_load = float(0)
-        skyline_grid_tied_load = float(0)
-        skyline_eps_load = float(0)
-        skyline_inverter_load = float(0)
+        dura_i_pv_power = float(0)
+        dura_i_battery_load = float(0)
+        dura_i_grid_load = float(0)
+        dura_i_grid_tied_load = float(0)
+        dura_i_eps_load = float(0)
+        dura_i_inverter_load = float(0)
 
         work_mode = -1
 
@@ -259,7 +259,7 @@ class Controller:
                     or len(eps_data.registers) < 19
                 ):
                     _LOGGER.error(
-                        "Skyline Inverter did not provide all results at host %s",
+                        "Dura-i Inverter did not provide all results at host %s",
                         self.host,
                     )
                     return
@@ -272,7 +272,7 @@ class Controller:
                     and registers_to_unsigned_32(battery_data.registers, 17) == 0
                 ):
                     _LOGGER.error(
-                        "Skyline Inverter provided too many zero registers at host %s",
+                        "Dura-i Inverter provided too many zero registers at host %s",
                         self.host,
                     )
                     return
@@ -288,7 +288,7 @@ class Controller:
                     + registers_to_unsigned_32(inverter_power_data.registers, 21)
                 ) / 10000
 
-                skyline_pv_power = skyline_pv_power + inverter_pv_power
+                dura_i_pv_power = dura_i_pv_power + inverter_pv_power
 
                 self.sensor_entities[
                     inverter.serial_number + "_pv_power"
@@ -314,7 +314,7 @@ class Controller:
                 inverter_battery_load = (
                     registers_to_signed_32(battery_data.registers, 9) / 10000
                 )
-                skyline_battery_load = skyline_battery_load + inverter_battery_load
+                dura_i_battery_load = dura_i_battery_load + inverter_battery_load
                 self.sensor_entities[
                     inverter.serial_number + "_battery_load"
                 ].set_native_value(inverter_battery_load)
@@ -322,7 +322,7 @@ class Controller:
                 inverter_grid_load = (
                     registers_to_signed_32(grid_power_data.registers, 0) / 10000
                 )
-                skyline_grid_load = skyline_grid_load + inverter_grid_load
+                dura_i_grid_load = dura_i_grid_load + inverter_grid_load
                 self.sensor_entities[
                     inverter.serial_number + "_grid_load"
                 ].set_native_value(
@@ -344,8 +344,8 @@ class Controller:
                 inverter_grid_tied_load = (
                     registers_to_signed_32(grid_power_data.registers, 10) / 10000
                 )
-                skyline_grid_tied_load = (
-                    skyline_grid_tied_load + inverter_grid_tied_load
+                dura_i_grid_tied_load = (
+                    dura_i_grid_tied_load + inverter_grid_tied_load
                 )
                 self.sensor_entities[
                     inverter.serial_number + "_grid_tied_load"
@@ -357,7 +357,7 @@ class Controller:
                     + registers_to_signed_32(eps_data.registers, 14)
                 ) / 10000
 
-                skyline_eps_load = skyline_eps_load + inverter_eps_load
+                dura_i_eps_load = dura_i_eps_load + inverter_eps_load
                 self.sensor_entities[
                     inverter.serial_number + "_eps_load"
                 ].set_native_value(inverter_eps_load)
@@ -367,7 +367,7 @@ class Controller:
                     + registers_to_signed_32(inverter_power_data.registers, 7)
                     + registers_to_signed_32(inverter_power_data.registers, 12)
                 ) / 10000
-                skyline_inverter_load = skyline_inverter_load + inverter_load
+                dura_i_inverter_load = dura_i_inverter_load + inverter_load
                 self.sensor_entities[
                     inverter.serial_number + "_inverter_load"
                 ].set_native_value(inverter_load)
@@ -539,7 +539,7 @@ class Controller:
                     inverter.serial_number + "_excess_target_soc"
                 ].set_number_value(self.excess_target_soc)
             
-                # No point in the below as the inverter is always returning zero until Skyline fix it.
+                # No point in the below as the inverter is always returning zero until this is fixed.
                 # self.sensor_entities[
                 #    inverter.serial_number + "_battery_temp"
                 # ].set_native_value(register_to_signed_16(battery_data.registers[1]))
@@ -547,11 +547,11 @@ class Controller:
             except:  # noqa: E722
                 _LOGGER.info("Error retrieving inverter stats")
 
-        self.sensor_entities["skyline_consumer_load"].set_native_value(
+        self.sensor_entities["dura_i_consumer_load"].set_native_value(
             round(
                 self.aggregate(
-                    "skyline_consumer_load",
-                    skyline_eps_load + skyline_grid_tied_load,
+                    "dura_i_consumer_load",
+                    dura_i_eps_load + dura_i_grid_tied_load,
                     math.ceil(60 / INVERTER_POLL_INTERVAL_SECONDS),
                 ),
                 2,
@@ -565,19 +565,19 @@ class Controller:
                 ).state
 
                 if self_consumption_load is None:
-                    self_consumption_load = skyline_grid_tied_load
+                    self_consumption_load = dura_i_grid_tied_load
                 else:
                     self_consumption_load = (
                         float(self_consumption_load)
                         * self.excess_load_entity_id_multiplier
                     )
             else:
-                self_consumption_load = skyline_grid_tied_load
+                self_consumption_load = dura_i_grid_tied_load
 
-            skyline_average_excess_pv_power = self.aggregate(
-                "skyline_average_excess_pv_power",
-                skyline_pv_power
-                - ((self_consumption_load + skyline_eps_load) * self.excess_load_ratio),
+            dura_i_average_excess_pv_power = self.aggregate(
+                "dura_i_average_excess_pv_power",
+                dura_i_pv_power
+                - ((self_consumption_load + dura_i_eps_load) * self.excess_load_ratio),
                 math.ceil(
                     self.excess_averaging_period_seconds
                     / INVERTER_POLL_INTERVAL_SECONDS
@@ -585,9 +585,9 @@ class Controller:
                 always_aggregate=True,
             )
 
-            self.sensor_entities["skyline_average_excess_pv_power"].set_native_value(
+            self.sensor_entities["dura_i_average_excess_pv_power"].set_native_value(
                 round(
-                    skyline_average_excess_pv_power,
+                    dura_i_average_excess_pv_power,
                     2,
                 )
             )
@@ -610,34 +610,34 @@ class Controller:
                 await self.update_feed_in_excess()
 
         if len(self.inverters) > 1:
-            self.sensor_entities["skyline_pv_power"].set_native_value(
+            self.sensor_entities["dura_i_pv_power"].set_native_value(
                 round(
                     self.aggregate(
-                        "skyline_pv_power",
-                        skyline_pv_power,
+                        "dura_i_pv_power",
+                        dura_i_pv_power,
                         math.ceil(60 / INVERTER_POLL_INTERVAL_SECONDS),
                     ),
                     2,
                 )
             )
 
-            self.sensor_entities["skyline_battery_load"].set_native_value(
-                round(skyline_battery_load, 2)
+            self.sensor_entities["dura_i_battery_load"].set_native_value(
+                round(dura_i_battery_load, 2)
             )
 
-            self.sensor_entities["skyline_grid_load"].set_native_value(
-                round(skyline_grid_load, 2)
+            self.sensor_entities["dura_i_grid_load"].set_native_value(
+                round(dura_i_grid_load, 2)
             )
 
-            self.sensor_entities["skyline_grid_tied_load"].set_native_value(
-                round(skyline_grid_tied_load, 2)
+            self.sensor_entities["dura_i_grid_tied_load"].set_native_value(
+                round(dura_i_grid_tied_load, 2)
             )
-            self.sensor_entities["skyline_inverter_load"].set_native_value(
-                round(skyline_inverter_load, 2)
+            self.sensor_entities["dura_i_inverter_load"].set_native_value(
+                round(dura_i_inverter_load, 2)
             )
 
-            self.sensor_entities["skyline_eps_load"].set_native_value(
-                round(skyline_eps_load, 2)
+            self.sensor_entities["dura_i_eps_load"].set_native_value(
+                round(dura_i_eps_load, 2)
             )
 
         await self.record_stats_to_clickhouse()
@@ -665,7 +665,7 @@ class Controller:
             return
 
         to_value = self.aggregate(
-            "skyline_average_excess_pv_power",
+            "dura_i_average_excess_pv_power",
             0,
             0,
             fetch_only=True,
@@ -764,7 +764,7 @@ class Controller:
         if self.clickhouse_is_init is True:
             self.aio_http_session = async_get_clientsession(self.hass)
             await self.clickhouse_exec(
-                "create table if not exists skyline_stats ( at_utc DateTime ) ENGINE = MergeTree PARTITION BY toYYYYMM(at_utc) ORDER BY at_utc;"
+                "create table if not exists dura_i_stats ( at_utc DateTime ) ENGINE = MergeTree PARTITION BY toYYYYMM(at_utc) ORDER BY at_utc;"
             )
 
         create = ""
@@ -779,7 +779,7 @@ class Controller:
                 if create == "":
                     create = (
                         create
-                        + "alter table skyline_stats add column if not exists "
+                        + "alter table dura_i_stats add column if not exists "
                         + k.replace("-", "_")
                         + " Float64"
                     )
@@ -803,7 +803,7 @@ class Controller:
             self.clickhouse_is_init = False
 
         await self.clickhouse_exec(
-            "insert into skyline_stats ( at_utc,"  # noqa: S608
+            "insert into dura_i_stats ( at_utc,"  # noqa: S608
             + columns
             + ") values ( toDateTime(now(), 'UTC'),"
             + values
@@ -885,10 +885,10 @@ class Controller:
                         _LOGGER.info("Created inverter")
 
                         _LOGGER.info(
-                            "Skyline Model Number is %s", inverter.model_number
+                            "Dura-i Model Number is %s", inverter.model_number
                         )
                         _LOGGER.info(
-                            "Skyline Serial Number is %s", inverter.serial_number
+                            "Dura-i Serial Number is %s", inverter.serial_number
                         )
 
                         await inverter.update_software_versions()
@@ -916,7 +916,7 @@ class Controller:
         if self.poller_task is not None:
             self.poller_task.cancel()
             self.poller_task = None
-            _LOGGER.info("Skyline is no longer polling")
+            _LOGGER.info("Dura-i is no longer polling")
 
     async def initialise(self):
         """Self intialisation."""

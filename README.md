@@ -1,89 +1,139 @@
-# HomeAssistant Dura I integration
-This integration communicates with your Skyline hybrid inverter system, providing real-time visibility on solar output, battery status, utilisation and more. It also allows you to control the work mode and various charging / discharging parameters.
+# HomeAssistant Duracell Dura-i Integration
 
-![image](https://github.com/iPeel/HA-Skyline/assets/49528212/af71b2de-1363-4bc8-8662-69e89101a9b9)
+This integration communicates with your Duracell Dura-i hybrid inverter system (rebranded Hoymiles HYS series), providing real-time visibility on solar output, battery status, grid utilisation and more. It also allows you to control various charging/discharging parameters.
 
-In order to use this integration, you must have connected your inverter to a Modbus to TCP/IP adapter through the RS485 port. Skyline provides no reasonable way to communicate with the inverter through the WiFi or Ethernet connections on the inverter itself, as soon as they do this integration will be updated to use it. In the meantime, a device like the Waveshare RS485 to TCP/IP adapter will work.
+Based on the [CYG Skyline integration](https://github.com/iPeel/HA-Skyline) by @iPeel, adapted for the Duracell Dura-i register map.
 
-## Modbus adapter configuration
+## Supported Hardware
 
-You will need a Modbus to TCP-RTU adapter, such as the Waveshare RS485 to Ethernet adapter: <a href="https://thepihut.com/products/rs485-to-rj45-ethernet-module">like this</a>
+- Duracell Dura-i hybrid inverter (G3 and similar models)
+- Duracell Dura 5 battery
+- Any Hoymiles HYS series hybrid inverter with compatible firmware
 
-Once you have one, you will need to configure it by connecting to it through a web browser on 192.168.1.200, you may need to set your own computer's IP address manually to see it then log in with the password "admin".
+## Connection Method
 
-Make sure you change the device so it has a permanent IP address on your network either with a DHCP static mapping or by assigning an IP address manually to the unit. You will then need to make the following changes:
+The integration communicates via Modbus TCP. You need an RS485 to Ethernet adapter (such as the Waveshare RS485 to Ethernet adapter) connected to the inverter's RS485 port.
 
-1. Set the device port to 502
-2. Set the baud rate to 9600
-3. Change the protocol to Modbus TCP to RTU
+### RS485 Connector
 
-<img width="1022" alt="image" src="https://github.com/iPeel/HA-Skyline/assets/49528212/b79b49ae-15fa-48fc-88ef-3cab4adfec67">
+The Dura-i uses a different RS485 connector from CYG Skyline inverters. Use **pins 7 and 9** on the inverter's communication port.
 
-You will need to wire your inverter to the Modbus adapter, this connection is made from the RS485 port on the inverter which can be located under the cover with two ports on it. Wire up ground to any of the PE connections, then RS485 A to A and B to B. Ethernet cable works well for this, make sure you use one of the twisted pairs such as blue for the RS485 A and B connections then use any other colour for ground.
+## Modbus Adapter Configuration
 
-![image](https://github.com/iPeel/HA-Skyline/assets/49528212/3732f7f2-00d2-4014-8d50-6373e3b56a01)
+You will need a Modbus to TCP-RTU adapter, such as the [Waveshare RS485 to Ethernet adapter](https://thepihut.com/products/rs485-to-rj45-ethernet-module).
 
-![image](https://github.com/iPeel/HA-Skyline/assets/49528212/a35b538e-3634-4189-a244-a9d2da60e100)
+Configure the adapter:
 
-If you can't find the connectors necessary on the inverter side, they can be purchased from <a href="https://cpc.farnell.com/phoenix-contact/mc-1-5-4-st-3-5/plug-free-3-5mm-4way/dp/CN18540">here</a>.
+1. Set the device port to **502**
+2. Set the baud rate to **9600**
+3. Change the protocol to **Modbus TCP to RTU**
+
+Make sure the adapter has a static IP address on your network.
 
 ## Prerequisites
 
-This integration is managed through the Home Assistant Community Store ( HACS ), please follow the HACS installation steps from <a href="https://hacs.xyz/">the HACS website</a> before continuing.
+This integration is managed through the Home Assistant Community Store (HACS). Follow the [HACS installation steps](https://hacs.xyz/) before continuing.
 
 ## Installation
 
-From the HACS menu, press the three dots on the top right and select Custom Repositories. In the repository, enter https://github.com/iPeel/HA-Skyline and set the category to Integration. You should now be able to see the Skyline integration and choose Download from the bottom right of the Skyline integration page. If requested to do so, restart Home Assistant after downloading.
+From the HACS menu, press the three dots on the top right and select Custom Repositories. Enter the repository URL and set the category to Integration. Download the integration and restart Home Assistant if requested.
 
 ## Configuration
 
-Once installed, add your inverter to HomeAssistant from Settings > Devices and then the Integrations tab. At the bottom right, click "Add Integration" then select "Skyline". If used for the first time, wait a minute or two while dependencies are installed. When prompted, enter the IP address of your Modbus adapter. The integration then scans for Modbus slaves, adding all inverters discovered.
+Once installed, add your inverter from Settings > Devices > Integrations tab. Click "Add Integration" then select "Duracell Dura-i Inverter". Enter the IP address of your Modbus adapter.
 
-### Multiple parallel inverters
+## Sensors Provided
 
-If you have multiple inverters they can either be connected to the same modbus adapter, with each inverter configured with a unique slave address in the Communications settings in the Solar Touch App or by using multiple Modbus adapters. Currently Skyline incorrectly synchronises the modbus address of each host when inverters are connected in parallel, and are yet to fix this issue ( if ever ). This means for parallel mode inverters you need multiple Modbus adapters.
+### Power Sensors
+- **PV Power** - Total solar generation (kW)
+- **MPPT1/MPPT2 Power** - Individual string power (kW)
+- **Battery Load** - Battery charge/discharge power (kW, positive = charging)
+- **Grid Load** - Grid import/export power (kW, positive = importing)
+- **Current Load** - House consumption (kW)
+- **Inverter Load** - Total inverter output (kW)
 
-To use multiple modbus adapters, in the integration configuration provide each IP address separated by commas. At startup the integration scans for inverters and will present each inverter in a parallel configuration as a separate inverter.
+### Energy Sensors
+- **PV Energy Today** - Solar generation today (kWh)
+- **PV Energy Total** - Lifetime solar generation (kWh)
 
-Note when inverters are in parallel, inverters will report their respective power settings adjusted for the number of inverters and will share and setting equally between them. For example, with 2 parallel inverters the Grid Charge Max Power setting will read 6kW from each inverter but present this as 12kW in Home Assistant, then any change of setting will halve the set amount for each inverter, so setting to 10kW will end up as 5kW on each inverter.
+### Battery Sensors
+- **State of Charge** - Battery level (%)
+- **Battery Voltage** - Battery voltage (V)
+- **Battery Current** - Battery current (A)
+- **Battery Temperature** - Battery temperature (°C)
 
-When more than one inverter is discovered, some additional entities are registered which provide summed power for solar output, inverter output and grid / house / EPS demand. These are integration entities and not linked to any specific device so are only visible under the main integration entities view.
+### Grid Sensors
+- **Grid Voltage** - Grid voltage (V)
+- **Grid Current** - Grid/CT current (A)
 
-## Feed In Excess Solar mode
+### MPPT Sensors
+- **MPPT1/2 Voltage** - String voltage (V)
+- **MPPT1/2 Current** - String current (A)
 
-There is a "Match Feed In To Excess Solar" setting which attempts to overcome issues with parallel inverters where inverters de-rate solar when the battery is full or restricted to a specific charge rate or SoC, making it difficult to export excess solar. When enabled and the inverter is in "Feed In Priority" mode, each 10 minute period the Max Feed In Power setting is tweaked based on the average of excess solar over the previous 10 minutes. Excess solar is calculated based on the average PV power minus the average consumption ( EPS + grid tied loads ). The amount of feed in is compensated to attempt to keep the battery SoC around a setpoint, with feed in power increased or decreased based on a parameter per 10% SoC difference. This mode can also always feed in some power by a specified amount even when there is no excess, so that there will always be a little "push" on the grid to overcome the inverter's inherent lack of dynamic power control.
+### Temperature
+- **Inverter Temp** - Inverter temperature (°C)
 
-The parameters controlling this mode can be set by configuring the integration, there is a value to determine the target SoC percentage to balance around, the amount to increase or decrease solar by to maintain the setpoint, and the amount of minimum feed in power when no excess is available. You can also set these parameters in runtime ( resets when HA is restarted ) by calling the "dura_i.set_excess_params" service with a payload containing any parameters you want to change ( it's not necessary to include keys you do not want to change ):
+### Binary Sensors
+- **Am Exporting** - Sustained grid export detected
+- **Am Importing** - Sustained grid import detected
 
-![image](https://github.com/iPeel/HA-Skyline/assets/49528212/27cbc741-ab14-4062-8eed-12999443dbf3)
+## Controllable Parameters
 
-The full list of available keys are:
+- **Battery Discharge Max Power** (W) - register 8474
+- **Grid Charge Max Power** (W) - register 8470
+- **Battery Max Charge Power** (W) - register 8472
+- **Grid Feed In Max Power** (W) - register 8485
+- **Charge End SoC** (%) - register 8473
+- **Excess Target SoC** (%) - software-controlled
 
-Key | Description
---- | -----------
-target_soc_percent | The setpoint os State of Charge to attempt to keep the battery at, the average excess yield is adjusted to keep the battery at this setpoint, default is as configured.
-target_soc_rate | The kW per 10 percent to use to maintain the SoC setpoint, e.g. a value of 1 would vary the feed in rate by 1Kw if the SoC was 10 percent off the target, default is as configured.
-min_feed_in_rate | If there is no excess solar, this is the value the feed-in will be set to per inverter, default is as configured.
-rapid_change_threshold | If the excess with SoC adjustment is off by more than this the an adjustment will be made within 60 seconds, default is 500w.
-slow_change_threshold | If the excess with SoC adjustment is less than this then no change will be made, unless the amount of excess is zero, default is 100w.
-slow_change_period_seconds | The amount of time to wait since the last adjustment for making any minor adjustments greater than the slow_change_threshold, default is 600 seconds.
-averaging_period_seconds | The amount of time in seconds to average solar and demand over, default is 300 seconds.
+## Feed In Excess Solar Mode
 
+The "Match Feed In To Excess Solar" switch attempts to automatically adjust grid feed-in power based on average excess solar production. This compensates for SoC to maintain a target battery level.
 
-There is an entity "Skyline Excess PV Power" which provides the current calculation of excess over the last averaging_period_seconds, note this entity can be negative if PV is less than demand, and this value does not display any adjustments for SoC balancing.
+Parameters can be configured via integration options or the `dura_i.set_excess_params` service.
 
-## Current Limitations
+## Register Map Reference
 
-Polling intervals are fixed at 10 seconds since the previous poll, this seems "real-time" enough.
+The Duracell Dura-i uses the following key Modbus holding registers:
 
-The integration currently assumes the inverter model is a 6kW type, the intention in future releases is to limit max charge / discharge parameters based on inverter model however for the moment you will need to configure only for the max rating of your inverter otherwise commands will probably fail.
+| Register | Description | Type | Scale |
+|----------|-------------|------|-------|
+| 4097 | Grid Voltage | uint16 | ×0.1 V |
+| 4100 | PV Power Total | uint16 | ×0.1 W |
+| 4112-4119 | MPPT1/2 Voltage, Current, Power | uint16 | various |
+| 4124 | Inverter Temperature | uint16 | °C |
+| 4130 | Energy Total | uint16 | kWh |
+| 4136 | Energy Today | uint16 | ×0.001 kWh |
+| 2041 | Grid Power | int16 | ×0.01 W |
+| 2046 | Load Power | int16 | ×0.01 W |
+| 4894 | Grid/CT Current | int16 | ×0.01 A |
+| 8192 | Battery SOC | uint16 | % |
+| 8198 | Battery Voltage | uint16 | ×0.1 V |
+| 8200 | Battery Current | int16 | ×0.01 A |
+| 8202 | Battery Power | int16 | ×0.1 W |
+| 8219 | Battery Temperature | uint16 | °C |
+| 8470 | Grid Charge Max Power | uint16 | W |
+| 8472 | Max Charge Power | uint16 | W |
+| 8473 | Charge End SOC | uint16 | % |
+| 8474 | Max Discharge Power | uint16 | W |
+| 8475 | Discharge End SOC | uint16 | % |
+| 8485 | Max Grid Input | uint16 | W |
 
-There are no battery temperature sensors, as Skyline do not currently write the battery temperature address correctly ( it's always zero ). This has been reported but as yet Skyline have not acknowledged the problem and as a result this sensor is not published.
+## Known Limitations
 
-In the event of a communication failure, the integration will retry writes if sensor readings do not match a recent set request. There are 9 retry attempts and this is to ensure that any communications issues with the inverter are recovered. If you make a setting which your inverter does not support then the integration may keep retrying the setting when data read does not match what data was written.
+- The integration polls every 10 seconds.
+- The Dura-i may not expose a work mode selection register via Modbus (unlike the CYG Skyline). If you discover the correct register, you can re-enable the select entity.
+- Some register addresses may vary between firmware versions. If a sensor shows incorrect values, you may need to adjust the register offsets in `const.py`.
 
-Many sensors are in English only and have no International translations, this is a work in progress.
+## Troubleshooting
 
-Sometimes sensors will read zero, this is an issue with Skyline reporting and not the integration, you may have noticed this already in the Solar Touch app or on the cloudinverter web view. It seems that sometimes the inverter reports zero values. Solar output and grid utilisation seem to be the worse for this and as a reult the integration averages readings over the past 30 seconds. Also bear in mind that statistics are gathered from multiple requests and therefore due to the dynamic nature of the inverter some statistics may not add up as they are gathered at very slightly different points in time, this is expecially true for parallel inverters, where some individual values ( like grid power ) are broken up and distributed across multiple inverters and may change dynamically during the duration of a poll.
+If the integration fails to connect:
+1. Verify your Waveshare adapter is reachable (ping its IP)
+2. Confirm it's set to port 502, baud 9600, Modbus TCP to RTU
+3. Check you're using pins 7 and 9 on the inverter's RS485 connector
+4. Try restarting the inverter and adapter
 
-If you shut down the inverter then at startup the inverter may report zero values for all historic readings, the integration makes an attempt to spot this and not post the data to HA but for the sake of historic sensor readings it is recommended to turn off the Modbus adapter when restarting the inverter.
+## Credits
+
+Based on the original [HA-Skyline](https://github.com/iPeel/HA-Skyline) integration by @iPeel.
+Register mapping based on community research from the [Home Assistant forums](https://community.home-assistant.io/t/help-mapping-modbus-registers-for-dura-inverter-with-home-assistant/989077).

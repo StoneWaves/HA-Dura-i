@@ -94,11 +94,11 @@ class InverterSwitchEntity(SwitchEntity):
         else:
             entity_id = generate_entity_id(
                 "switch.{}",
-                "skyline_" + entityType,
+                "dura_i_" + entityType,
                 [],
                 self.hass,
             )
-            self._attr_unique_id = "skyline_" + entityType
+            self._attr_unique_id = "dura_i_" + entityType
 
         self.entity_id = entity_id
 

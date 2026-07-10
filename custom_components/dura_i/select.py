@@ -1,4 +1,4 @@
-"""Skyline Select Entity."""
+"""Dura-i Select Entity."""
 import logging
 
 from homeassistant.components.select import SelectEntity

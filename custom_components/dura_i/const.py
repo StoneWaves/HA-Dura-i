@@ -1,4 +1,4 @@
-"""Constants for the Skyline integration."""
+"""Constants for the Dura-i integration."""
 
 from homeassistant.const import Platform
 
@@ -6,7 +6,7 @@ DOMAIN = "dura_i"
 INVERTER_POLL_INTERVAL_SECONDS = 10
 IMPORT_EXPORT_MONITOR_DURATION_SECONDS = 120
 IMPORT_EXPORT_THRESHOLD = 0.1
-MODBUS_MAX_SLAVE_ADDRESS = 1  # Stops us wasting time because Skyline doesn't let you change the slave address on parallel systems.
+MODBUS_MAX_SLAVE_ADDRESS = 1  # Stops us wasting time because the Dura-i doesn't let you change the slave address on parallel systems.
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.NUMBER,

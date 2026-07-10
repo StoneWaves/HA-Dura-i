@@ -1,4 +1,4 @@
-"""Skyline diagnostics sensors."""
+"""Dura-i diagnostics sensors."""
 import logging
 
 from homeassistant.components.sensor import (
@@ -31,7 +31,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up sensor platform."""
 
-    _LOGGER.info("Skyline async_setup_entry setup")
+    _LOGGER.info("Dura-i async_setup_entry setup")
 
     controller = hass.data[DOMAIN]["controller"]
 
@@ -499,7 +499,7 @@ async def async_setup_entry(
             stateClass=None,
         )
 
-        # No point in the below as the inverter is always returning zero until Skylinefix it.
+        # No point in the below as the inverter is always returning zero until this is fixed.
         # controller.sensor_entities[
         #    inverter.serial_number + "_battery_temp"
         # ] = InverterSensorEntity(
@@ -515,11 +515,11 @@ async def async_setup_entry(
         #    category=EntityCategory.DIAGNOSTIC,
         # )
 
-    controller.sensor_entities["skyline_consumer_load"] = InverterSensorEntity(
+    controller.sensor_entities["dura_i_consumer_load"] = InverterSensorEntity(
         hass,
         controller,
         None,
-        "Skyline Consumer Load",
+        "Dura-i Consumer Load",
         "consumer_load",
         "mdi:power-socket",
         unitOfMeasurement=UnitOfPower.KILO_WATT,
@@ -528,12 +528,12 @@ async def async_setup_entry(
     )
 
     controller.sensor_entities[
-        "skyline_average_excess_pv_power"
+        "dura_i_average_excess_pv_power"
     ] = InverterSensorEntity(
         hass,
         controller,
         None,
-        "Skyline Excess PV Power",
+        "Dura-i Excess PV Power",
         "average_excess_pv_power",
         "mdi:sun-wireless",
         unitOfMeasurement=UnitOfPower.KILO_WATT,
@@ -542,11 +542,11 @@ async def async_setup_entry(
     )
 
     if len(controller.inverters) > 1:
-        controller.sensor_entities["skyline_pv_power"] = InverterSensorEntity(
+        controller.sensor_entities["dura_i_pv_power"] = InverterSensorEntity(
             hass,
             controller,
             None,
-            "Skyline PV Power",
+            "Dura-i PV Power",
             "pv_power",
             "mdi:solar-power",
             unitOfMeasurement=UnitOfPower.KILO_WATT,
@@ -554,11 +554,11 @@ async def async_setup_entry(
             decimals=2,
         )
 
-        controller.sensor_entities["skyline_battery_load"] = InverterSensorEntity(
+        controller.sensor_entities["dura_i_battery_load"] = InverterSensorEntity(
             hass,
             controller,
             None,
-            "Skyline Battery Load",
+            "Dura-i Battery Load",
             "battery_load",
             "mdi:battery-minus-variant",
             unitOfMeasurement=UnitOfPower.KILO_WATT,
@@ -566,11 +566,11 @@ async def async_setup_entry(
             decimals=2,
         )
 
-        controller.sensor_entities["skyline_grid_load"] = InverterSensorEntity(
+        controller.sensor_entities["dura_i_grid_load"] = InverterSensorEntity(
             hass,
             controller,
             None,
-            "Skyline Grid Load",
+            "Dura-i Grid Load",
             "grid_load",
             "mdi:transmission-tower",
             unitOfMeasurement=UnitOfPower.KILO_WATT,
@@ -578,11 +578,11 @@ async def async_setup_entry(
             decimals=2,
         )
 
-        controller.sensor_entities["skyline_grid_tied_load"] = InverterSensorEntity(
+        controller.sensor_entities["dura_i_grid_tied_load"] = InverterSensorEntity(
             hass,
             controller,
             None,
-            "Skyline Current Load",
+            "Dura-i Current Load",
             "grid_tied_load",
             "mdi:home-lightning-bolt",
             unitOfMeasurement=UnitOfPower.KILO_WATT,
@@ -590,11 +590,11 @@ async def async_setup_entry(
             decimals=2,
         )
 
-        controller.sensor_entities["skyline_eps_load"] = InverterSensorEntity(
+        controller.sensor_entities["dura_i_eps_load"] = InverterSensorEntity(
             hass,
             controller,
             None,
-            "Skyline EPS Load",
+            "Dura-i EPS Load",
             "eps_load",
             "mdi:power-socket",
             unitOfMeasurement=UnitOfPower.KILO_WATT,
@@ -602,11 +602,11 @@ async def async_setup_entry(
             decimals=2,
         )
 
-        controller.sensor_entities["skyline_inverter_load"] = InverterSensorEntity(
+        controller.sensor_entities["dura_i_inverter_load"] = InverterSensorEntity(
             hass,
             controller,
             None,
-            "Skyline Inverter Load",
+            "Dura-i Inverter Load",
             "inverter_load",
             "mdi:flash",
             unitOfMeasurement=UnitOfPower.KILO_WATT,
@@ -654,11 +654,11 @@ class InverterSensorEntity(SensorEntity):
         else:
             entity_id = generate_entity_id(
                 "sensor.{}",
-                "skyline_" + entityType,
+                "dura_i_" + entityType,
                 [],
                 self.hass,
             )
-            self._attr_unique_id = "skyline_" + entityType
+            self._attr_unique_id = "dura_i_" + entityType
 
         self.controller = controller
         self.hass = hass

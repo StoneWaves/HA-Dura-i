@@ -1,4 +1,4 @@
-"""Skyline inverter modules."""
+"""Dura-i inverter modules."""
 
 from datetime import datetime, timedelta
 import logging
@@ -80,13 +80,13 @@ class Inverter:
 
         self.device_info = DeviceInfo(
             identifiers={(DOMAIN, self.serial_number)},
-            name="Skyline " + self.serial_number,
-            manufacturer="Skyline",
+            name="Dura-i " + self.serial_number,
+            manufacturer="Duracell",
             model=self.model_number,
         )
 
     def shag_pv_energy_today(self, pv_energy_today: float):
-        """Shag a PV energy today from offset because CYG are useless."""
+        """Shag a PV energy today from offset because the inverter resets incorrectly."""
         if self.previous_pv_energy_today > pv_energy_today and pv_energy_today < 1:
             self.pv_energy_today_offset = pv_energy_today
             _LOGGER.info("Setting PV energy offset to %s", self.pv_energy_today_offset)

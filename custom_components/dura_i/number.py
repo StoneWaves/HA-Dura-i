@@ -1,4 +1,4 @@
-"""CYG Skyline Number Entities."""
+"""Dura-i Number Entities."""
 import logging
 
 from homeassistant.components.number import NumberEntity, NumberMode

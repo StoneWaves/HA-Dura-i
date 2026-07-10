@@ -1,4 +1,4 @@
-"""Config flow for CYG Skyline integration."""
+"""Config flow for Dura-i integration."""
 
 from __future__ import annotations
 
@@ -43,14 +43,14 @@ class ModbusHub:
             client = AsyncModbusTcpClient(host=host, port=port)
             await client.connect()
             if not client or not client.connected:
-                _LOGGER.error("CYG Modbus host invalid")
+                _LOGGER.error("Dura-i Modbus host invalid")
                 return False
 
             response = await client.read_holding_registers(
                 address=0x1A10, count=8, device_id=1
             )
             if not response:
-                _LOGGER.error("CYG Modbus no response from host")
+                _LOGGER.error("Dura-i Modbus no response from host")
                 return False
 
             serial = ""
@@ -99,7 +99,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for CYG Skyline."""
+    """Handle a config flow for Dura-i."""
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -144,7 +144,7 @@ class InvalidAuth(HomeAssistantError):
 
 
 class OptionsFlowHandler(OptionsFlow):
-    """Skyline Options Flow handler."""
+    """Dura-i Options Flow handler."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
@@ -153,7 +153,7 @@ class OptionsFlowHandler(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Skyline Options Flow handler intiialiser."""
+        """Dura-i Options Flow handler initialiser."""
         errors: dict[str, str] = {}
         if user_input is not None:
             try:

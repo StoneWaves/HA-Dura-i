@@ -188,7 +188,7 @@ class InverterNumberEntity(NumberEntity):
         self.controller = controller
         self.hass = hass
         entity_id = generate_entity_id(
-            "sensor.{}",
+            "number.{}",
             inverter.serial_number + "_" + entityType,
             [],
             self.hass,

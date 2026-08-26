@@ -30,7 +30,10 @@
                     "excess_load_percentage": "Excess percentage of load to account",
                     "excess_min_feed_in_rate": "Excess idle feed in watts",
                     "excess_max_soc_deviation_w": "Max SoC deviation in watts",
-                    "excess_load_entity_id": "Better entity id to assess consumer load ( in kW )"
+                    "excess_load_entity_id": "Better entity id to assess consumer load ( in kW )",
+                    "max_grid_load_kw": "Max plausible grid load (kW, +/-)",
+                    "max_battery_load_kw": "Max plausible battery load (kW, +/-)",
+                    "max_load_spike_kw": "Max load change between polls (kW)"
                 }
             }
         }

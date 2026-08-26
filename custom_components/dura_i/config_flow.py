@@ -14,7 +14,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import DOMAIN
+from .const import (
+    DEFAULT_MAX_BATTERY_LOAD_KW,
+    DEFAULT_MAX_GRID_LOAD_KW,
+    DEFAULT_MAX_LOAD_SPIKE_KW,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 STEP_USER_DATA_SCHEMA = vol.Schema(
@@ -202,6 +207,18 @@ class OptionsFlowHandler(OptionsFlow):
         excess_load_percentage = 100
         if "excess_load_percentage" in self.config_entry.data:
             excess_load_percentage = self.config_entry.data["excess_load_percentage"]
+
+        max_grid_load_kw = DEFAULT_MAX_GRID_LOAD_KW
+        if "max_grid_load_kw" in self.config_entry.data:
+            max_grid_load_kw = self.config_entry.data["max_grid_load_kw"]
+
+        max_battery_load_kw = DEFAULT_MAX_BATTERY_LOAD_KW
+        if "max_battery_load_kw" in self.config_entry.data:
+            max_battery_load_kw = self.config_entry.data["max_battery_load_kw"]
+
+        max_load_spike_kw = DEFAULT_MAX_LOAD_SPIKE_KW
+        if "max_load_spike_kw" in self.config_entry.data:
+            max_load_spike_kw = self.config_entry.data["max_load_spike_kw"]
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
@@ -222,6 +239,15 @@ class OptionsFlowHandler(OptionsFlow):
                     vol.Optional(
                         "excess_load_entity_id", default=excess_load_entity_id
                     ): str,
+                    vol.Optional(
+                        "max_grid_load_kw", default=max_grid_load_kw
+                    ): vol.Coerce(float),
+                    vol.Optional(
+                        "max_battery_load_kw", default=max_battery_load_kw
+                    ): vol.Coerce(float),
+                    vol.Optional(
+                        "max_load_spike_kw", default=max_load_spike_kw
+                    ): vol.Coerce(float),
                 }
             ),
             errors=errors,

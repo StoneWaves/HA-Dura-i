@@ -637,9 +637,22 @@ class InverterSensorEntity(SensorEntity):
         stateClass=SensorStateClass.MEASUREMENT,
         decimals=-1,
         category=None,
+        minValue=None,
+        maxValue=None,
+        maxDelta=None,
     ) -> None:
         """Inverter sensor intialiser."""
         self.currentValue = None
+
+        # Optional sanity-check bounds. Any of these can be None to skip that check.
+        # minValue/maxValue: absolute plausible range for the reading.
+        # maxDelta: largest change permitted between two consecutive polls.
+        self._min_value = minValue
+        self._max_value = maxValue
+        self._max_delta = maxDelta
+        # Number of consecutive rejected readings. Used so a genuine step change
+        # is eventually accepted rather than being rejected forever.
+        self._rejected_count = 0
 
         if inverter is not None:
             self.inverter = inverter
@@ -685,11 +698,76 @@ class InverterSensorEntity(SensorEntity):
         if decimals >= 0:
             self._attr_suggested_display_precision = decimals
 
+    def _is_plausible(self, new_state) -> bool:
+        """Sanity check a new reading against configured bounds and the last value.
+
+        Returns True if the value looks sensible and should be written to HA,
+        False if it looks like a bad Modbus reading and should be dropped.
+        Only applies to numeric readings; anything else passes through.
+        """
+        if not isinstance(new_state, (int, float)):
+            return True
+
+        # Absolute range check.
+        if self._min_value is not None and new_state < self._min_value:
+            _LOGGER.warning(
+                "Dura-i %s rejected value %s below minimum %s",
+                self.entity_id,
+                new_state,
+                self._min_value,
+            )
+            return False
+
+        if self._max_value is not None and new_state > self._max_value:
+            _LOGGER.warning(
+                "Dura-i %s rejected value %s above maximum %s",
+                self.entity_id,
+                new_state,
+                self._max_value,
+            )
+            return False
+
+        # Rate-of-change (spike) check against the last accepted value.
+        if (
+            self._max_delta is not None
+            and isinstance(self.currentValue, (int, float))
+            and abs(new_state - self.currentValue) > self._max_delta
+        ):
+            # Allow the value through if the same kind of jump keeps happening,
+            # i.e. reality has genuinely shifted and this isn't a one-off glitch.
+            if self._rejected_count < 3:
+                self._rejected_count += 1
+                _LOGGER.warning(
+                    "Dura-i %s rejected value %s: jump of %s exceeds max delta %s "
+                    "(rejection %s)",
+                    self.entity_id,
+                    new_state,
+                    abs(new_state - self.currentValue),
+                    self._max_delta,
+                    self._rejected_count,
+                )
+                return False
+
+            _LOGGER.info(
+                "Dura-i %s accepting value %s after %s rejections; treating as a real change",
+                self.entity_id,
+                new_state,
+                self._rejected_count,
+            )
+
+        return True
+
     def set_native_value(self, new_state) -> None:
         """Set the HA value from the modbus response."""
         if self.currentValue is not None and self.currentValue == new_state:
             # avoid noise...
             return
+
+        if not self._is_plausible(new_state):
+            return
+
+        # Value accepted, reset the run of rejections.
+        self._rejected_count = 0
 
         self.currentValue = new_state
 

@@ -12,6 +12,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
+    DEFAULT_MAX_BATTERY_LOAD_KW,
+    DEFAULT_MAX_GRID_LOAD_KW,
+    DEFAULT_MAX_LOAD_SPIKE_KW,
     IMPORT_EXPORT_MONITOR_DURATION_SECONDS,
     IMPORT_EXPORT_THRESHOLD,
     INVERTER_POLL_INTERVAL_SECONDS,
@@ -47,6 +50,13 @@ class Controller:
         self.binary_sensor_entities = {}
         self._init_count = 0
         self.aggregates = {}
+        # Last known-good raw readings per key, used to reject implausible spikes
+        # before they are aggregated or summed into totals.
+        self.last_good_raw = {}
+        # User-configurable sanity-check limits (kW). Defaults from const.py.
+        self.max_grid_load_kw = float(DEFAULT_MAX_GRID_LOAD_KW)
+        self.max_battery_load_kw = float(DEFAULT_MAX_BATTERY_LOAD_KW)
+        self.max_load_spike_kw = float(DEFAULT_MAX_LOAD_SPIKE_KW)
         self.inverters = []
         self.clickhouse_url = ""
         self.clickhouse_is_init = True
@@ -129,6 +139,22 @@ class Controller:
                     self.excess_load_entity_id_multiplier,
                 )
 
+        if "max_grid_load_kw" in entry.data:
+            self.max_grid_load_kw = float(entry.data["max_grid_load_kw"])
+
+        if "max_battery_load_kw" in entry.data:
+            self.max_battery_load_kw = float(entry.data["max_battery_load_kw"])
+
+        if "max_load_spike_kw" in entry.data:
+            self.max_load_spike_kw = float(entry.data["max_load_spike_kw"])
+
+        _LOGGER.info(
+            "Dura-i sanity limits: max grid %skW, max battery %skW, max spike %skW",
+            self.max_grid_load_kw,
+            self.max_battery_load_kw,
+            self.max_load_spike_kw,
+        )
+
         _LOGGER.info("Dura-i controller starting")
 
     def aggregate(
@@ -170,6 +196,39 @@ class Controller:
             return value
 
         return t / num
+
+    def sane_raw(self, key: str, value, max_abs, max_delta):
+        """Sanity check a raw reading before it is aggregated or summed.
+
+        Rejects values outside +/- max_abs, or that jump more than max_delta from
+        the last known-good reading, and substitutes the last good value instead.
+        This stops a single bad Modbus read from polluting rolling averages and
+        multi-inverter totals. Returns the value to use.
+        """
+        last = self.last_good_raw.get(key)
+
+        if abs(value) > max_abs:
+            _LOGGER.warning(
+                "Dura-i raw %s value %s exceeds +/-%s, using last good %s",
+                key,
+                value,
+                max_abs,
+                last,
+            )
+            return last if last is not None else 0
+
+        if last is not None and abs(value - last) > max_delta:
+            _LOGGER.warning(
+                "Dura-i raw %s value %s jumped more than %s from %s, using last good",
+                key,
+                value,
+                max_delta,
+                last,
+            )
+            return last
+
+        self.last_good_raw[key] = value
+        return value
 
     def am_exporting_importing(self, inverter: Inverter, is_import: bool) -> bool:
         """Determine if we're importing or exporting."""
@@ -311,16 +370,22 @@ class Controller:
                     registers_to_unsigned_32(inverter_power_data.registers, 21) / 10000
                 )
 
-                inverter_battery_load = (
-                    registers_to_signed_32(battery_data.registers, 9) / 10000
+                inverter_battery_load = self.sane_raw(
+                    inverter.serial_number + "_battery_load_raw",
+                    registers_to_signed_32(battery_data.registers, 9) / 10000,
+                    max_abs=self.max_battery_load_kw,
+                    max_delta=self.max_load_spike_kw,
                 )
                 dura_i_battery_load = dura_i_battery_load + inverter_battery_load
                 self.sensor_entities[
                     inverter.serial_number + "_battery_load"
                 ].set_native_value(inverter_battery_load)
 
-                inverter_grid_load = (
-                    registers_to_signed_32(grid_power_data.registers, 0) / 10000
+                inverter_grid_load = self.sane_raw(
+                    inverter.serial_number + "_grid_load_raw",
+                    registers_to_signed_32(grid_power_data.registers, 0) / 10000,
+                    max_abs=self.max_grid_load_kw,
+                    max_delta=self.max_load_spike_kw,
                 )
                 dura_i_grid_load = dura_i_grid_load + inverter_grid_load
                 self.sensor_entities[

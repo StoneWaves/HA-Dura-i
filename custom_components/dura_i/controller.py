@@ -139,14 +139,22 @@ class Controller:
                     self.excess_load_entity_id_multiplier,
                 )
 
+        # Sanity limits may be set via the options flow (entry.data) or live via
+        # the number controls (entry.options). Options take precedence.
         if "max_grid_load_kw" in entry.data:
             self.max_grid_load_kw = float(entry.data["max_grid_load_kw"])
+        if "max_grid_load_kw" in entry.options:
+            self.max_grid_load_kw = float(entry.options["max_grid_load_kw"])
 
         if "max_battery_load_kw" in entry.data:
             self.max_battery_load_kw = float(entry.data["max_battery_load_kw"])
+        if "max_battery_load_kw" in entry.options:
+            self.max_battery_load_kw = float(entry.options["max_battery_load_kw"])
 
         if "max_load_spike_kw" in entry.data:
             self.max_load_spike_kw = float(entry.data["max_load_spike_kw"])
+        if "max_load_spike_kw" in entry.options:
+            self.max_load_spike_kw = float(entry.options["max_load_spike_kw"])
 
         _LOGGER.info(
             "Dura-i sanity limits: max grid %skW, max battery %skW, max spike %skW",
@@ -196,6 +204,31 @@ class Controller:
             return value
 
         return t / num
+
+    def battery_load_limit_kw(self, inverter: Inverter) -> float:
+        """Return the max plausible battery load (kW) for an inverter.
+
+        Uses the inverter's own reported "Battery Discharge Max Power" and
+        "Battery Max Charge Power" number entities. Battery load is signed
+        (charge vs discharge), and the two limits are asymmetric, so we bound
+        the magnitude by whichever is larger to avoid rejecting valid readings
+        in either direction. Falls back to the configured limit if those
+        entities have not been populated yet.
+        """
+        candidates = []
+        for suffix in ("_battery_max_power", "_battery_max_charge_power"):
+            entity = self.number_entities.get(inverter.serial_number + suffix)
+            if entity is not None and isinstance(
+                getattr(entity, "currentValue", None), (int, float)
+            ):
+                candidates.append(float(entity.currentValue))
+
+        if not candidates:
+            return self.max_battery_load_kw
+
+        # A small headroom factor avoids rejecting readings that momentarily sit
+        # right at the configured maximum.
+        return max(candidates) * 1.1
 
     def sane_raw(self, key: str, value, max_abs, max_delta):
         """Sanity check a raw reading before it is aggregated or summed.
@@ -373,7 +406,7 @@ class Controller:
                 inverter_battery_load = self.sane_raw(
                     inverter.serial_number + "_battery_load_raw",
                     registers_to_signed_32(battery_data.registers, 9) / 10000,
-                    max_abs=self.max_battery_load_kw,
+                    max_abs=self.battery_load_limit_kw(inverter),
                     max_delta=self.max_load_spike_kw,
                 )
                 dura_i_battery_load = dura_i_battery_load + inverter_battery_load
@@ -603,6 +636,14 @@ class Controller:
                 self.number_entities[
                     inverter.serial_number + "_excess_target_soc"
                 ].set_number_value(self.excess_target_soc)
+
+                self.number_entities[
+                    inverter.serial_number + "_max_grid_load_kw"
+                ].set_number_value(self.max_grid_load_kw)
+
+                self.number_entities[
+                    inverter.serial_number + "_max_load_spike_kw"
+                ].set_number_value(self.max_load_spike_kw)
             
                 # No point in the below as the inverter is always returning zero until this is fixed.
                 # self.sensor_entities[
@@ -722,6 +763,24 @@ class Controller:
         options = {"match_feed_in_to_excess_power": self.match_feed_in_to_excess_power, "excess_target_soc": self.excess_target_soc }
 
         self.hass.config_entries.async_update_entry(self.config, options=options)
+
+    def _persist_option(self, key: str, value):
+        """Persist a single option without clobbering the others."""
+        options = dict(self.config.options)
+        options[key] = value
+        self.hass.config_entries.async_update_entry(self.config, options=options)
+
+    async def set_max_grid_load_kw(self, setting: float):
+        """Update the max plausible grid load limit (kW)."""
+        self.max_grid_load_kw = float(setting)
+        _LOGGER.info("Max grid load sanity limit set to %skW", self.max_grid_load_kw)
+        self._persist_option("max_grid_load_kw", self.max_grid_load_kw)
+
+    async def set_max_load_spike_kw(self, setting: float):
+        """Update the max allowed load change between polls (kW)."""
+        self.max_load_spike_kw = float(setting)
+        _LOGGER.info("Max load spike sanity limit set to %skW", self.max_load_spike_kw)
+        self._persist_option("max_load_spike_kw", self.max_load_spike_kw)
 
     async def update_feed_in_excess(self):
         """Set the feed in power to the recent average."""

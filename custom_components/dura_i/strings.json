@@ -32,13 +32,21 @@
           "excess_max_soc_deviation_w": "Max SoC deviation in watts",
           "excess_load_entity_id": "Better entity id to assess consumer load ( in kW )",
           "max_grid_load_kw": "Max plausible grid load (kW, +/-)",
-          "max_battery_load_kw": "Max plausible battery load (kW, +/-)",
+          "max_battery_load_kw": "Fallback max battery load (kW, used until inverter reports its own limits)",
           "max_load_spike_kw": "Max load change between polls (kW)"
         }}}},
   "entity": {
     "sensor": {
       "soc": {
         "name": "State Of Charge"
+      }
+    },
+    "number": {
+      "max_grid_load_kw": {
+        "name": "Max Grid Load Sanity Limit"
+      },
+      "max_load_spike_kw": {
+        "name": "Max Load Spike Sanity Limit"
       }
     }
   }

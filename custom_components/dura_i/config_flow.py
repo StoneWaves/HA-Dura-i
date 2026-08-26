@@ -171,11 +171,24 @@ class OptionsFlowHandler(OptionsFlow):
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
+                # The sanity limits can also be adjusted live via the number
+                # controls, which store into options and take precedence over
+                # data. Clear those keys here so a value entered in this form
+                # actually takes effect rather than being shadowed by a stale
+                # control value.
+                options = dict(self.config_entry.options)
+                for key in (
+                    "max_grid_load_kw",
+                    "max_battery_load_kw",
+                    "max_load_spike_kw",
+                ):
+                    options.pop(key, None)
+
                 # self.config_entry.version = 1
                 self.hass.config_entries.async_update_entry(
                     self.config_entry,
                     data=user_input,
-                    options=self.config_entry.options,
+                    options=options,
                     title="Modbus TCP-RTU on " + user_input["host"],
                 )
                 return self.async_create_entry(

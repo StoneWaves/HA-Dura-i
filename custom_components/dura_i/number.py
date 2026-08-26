@@ -150,6 +150,44 @@ async def async_setup_entry(
             category=EntityCategory.CONFIG
         )
 
+        controller.number_entities[
+            inverter.serial_number + "_max_grid_load_kw"
+        ] = InverterNumberEntity(
+            hass,
+            controller,
+            inverter,
+            "Max Grid Load Sanity Limit",
+            "max_grid_load_kw",
+            "mdi:transmission-tower-off",
+            registerToChange=None,
+            function_on_change=controller.set_max_grid_load_kw,
+            minValue=0,
+            maxValue=100,
+            stepSize=0.5,
+            valueMultiplier=1,
+            unitOfMeasurement=UnitOfPower.KILO_WATT,
+            category=EntityCategory.CONFIG,
+        )
+
+        controller.number_entities[
+            inverter.serial_number + "_max_load_spike_kw"
+        ] = InverterNumberEntity(
+            hass,
+            controller,
+            inverter,
+            "Max Load Spike Sanity Limit",
+            "max_load_spike_kw",
+            "mdi:pulse",
+            registerToChange=None,
+            function_on_change=controller.set_max_load_spike_kw,
+            minValue=0,
+            maxValue=100,
+            stepSize=0.5,
+            valueMultiplier=1,
+            unitOfMeasurement=UnitOfPower.KILO_WATT,
+            category=EntityCategory.CONFIG,
+        )
+
     entities = controller.get_number_entities()
 
     async_add_entities(entities)

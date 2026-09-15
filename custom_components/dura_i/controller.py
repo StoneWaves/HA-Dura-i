@@ -331,28 +331,35 @@ class Controller:
                 grid_config_data = await inverter.read_holding_registers(0x30B0, 12)
                 eps_data = await inverter.read_holding_registers(0x1350, 19)
 
-                if (
-                    inverter_power_data is None
-                    or grid_power_data is None
-                    or battery_data is None
-                    or inverter_config_data is None
-                    or grid_power_data.isError()
-                    or battery_data.isError()
-                    or inverter_config_data.isError()
-                    or inverter_power_data.registers is None
-                    or grid_power_data.registers is None
-                    or battery_data.registers is None
-                    or inverter_config_data.registers is None
-                    or len(inverter_power_data.registers) < 64
-                    or len(grid_power_data.registers) < 63
-                    or len(battery_data.registers) < 19
-                    or len(inverter_config_data.registers) < 34
-                    or len(grid_config_data.registers) < 12
-                    or len(eps_data.registers) < 19
-                ):
-                    _LOGGER.error(
-                        "Dura-i Inverter did not provide all results at host %s",
+                # Each block must be present, error-free, and the expected
+                # length. Validate them uniformly so a single failed/short read
+                # can be named rather than crashing on len(None.registers).
+                expected_blocks = {
+                    "inverter_power (0x1001)": (inverter_power_data, 64),
+                    "grid_power (0x1300)": (grid_power_data, 63),
+                    "battery (0x2000)": (battery_data, 19),
+                    "inverter_config (0x2100)": (inverter_config_data, 34),
+                    "grid_config (0x30B0)": (grid_config_data, 12),
+                    "eps (0x1350)": (eps_data, 19),
+                }
+
+                failed_block = None
+                for name, (data, expected_len) in expected_blocks.items():
+                    if (
+                        data is None
+                        or data.isError()
+                        or data.registers is None
+                        or len(data.registers) < expected_len
+                    ):
+                        failed_block = name
+                        break
+
+                if failed_block is not None:
+                    _LOGGER.warning(
+                        "Dura-i Inverter did not provide all results at host %s "
+                        "(incomplete read of %s block)",
                         self.host,
+                        failed_block,
                     )
                     return
 
@@ -363,7 +370,7 @@ class Controller:
                     and registers_to_unsigned_32(battery_data.registers, 13) == 0
                     and registers_to_unsigned_32(battery_data.registers, 17) == 0
                 ):
-                    _LOGGER.error(
+                    _LOGGER.warning(
                         "Dura-i Inverter provided too many zero registers at host %s",
                         self.host,
                     )

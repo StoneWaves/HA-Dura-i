@@ -467,6 +467,7 @@ async def async_setup_entry(
             deviceClass=None,
             unitOfMeasurement=None,
             stateClass=None,
+            enabledByDefault=False,
         )
 
         controller.sensor_entities[
@@ -482,6 +483,7 @@ async def async_setup_entry(
             deviceClass=None,
             unitOfMeasurement=None,
             stateClass=None,
+            enabledByDefault=False,
         )
 
         controller.sensor_entities[
@@ -497,6 +499,7 @@ async def async_setup_entry(
             deviceClass=None,
             unitOfMeasurement=None,
             stateClass=None,
+            enabledByDefault=False,
         )
 
         # No point in the below as the inverter is always returning zero until this is fixed.
@@ -525,6 +528,7 @@ async def async_setup_entry(
         unitOfMeasurement=UnitOfPower.KILO_WATT,
         deviceClass=SensorDeviceClass.POWER,
         decimals=2,
+        enabledByDefault=False,
     )
 
     controller.sensor_entities[
@@ -539,6 +543,7 @@ async def async_setup_entry(
         unitOfMeasurement=UnitOfPower.KILO_WATT,
         deviceClass=SensorDeviceClass.POWER,
         decimals=2,
+        enabledByDefault=False,
     )
 
     if len(controller.inverters) > 1:
@@ -640,9 +645,15 @@ class InverterSensorEntity(SensorEntity):
         minValue=None,
         maxValue=None,
         maxDelta=None,
+        enabledByDefault=True,
     ) -> None:
         """Inverter sensor intialiser."""
         self.currentValue = None
+
+        # Whether this entity shows up in HA by default. Set False to hide
+        # noisy/rarely-useful sensors; users can still opt in via the entity
+        # registry. The entity is still created so the poll loop can write to it.
+        self._attr_entity_registry_enabled_default = enabledByDefault
 
         # Optional sanity-check bounds. Any of these can be None to skip that check.
         # minValue/maxValue: absolute plausible range for the reading.

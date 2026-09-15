@@ -518,6 +518,30 @@ async def async_setup_entry(
         #    category=EntityCategory.DIAGNOSTIC,
         # )
 
+        # Read-only diagnostic sensors exposing the raw values of every register
+        # in the 0x2100 inverter-config block. These are used to reverse-engineer
+        # the time-of-use / scheduled-charge slots that the Duracell app writes.
+        # They are disabled by default so they don't clutter the UI; enable them
+        # in the entity registry while decoding the schedule map, then set a
+        # schedule in the app and watch which registers change.
+        for offset in range(0, 64):
+            register_address = 0x2100 + offset
+            controller.sensor_entities[
+                inverter.serial_number + f"_config_reg_{register_address:04x}"
+            ] = InverterSensorEntity(
+                hass,
+                controller,
+                inverter,
+                f"Config Register 0x{register_address:04X} ({register_address})",
+                f"config_reg_{register_address:04x}",
+                "mdi:memory",
+                unitOfMeasurement=None,
+                deviceClass=None,
+                stateClass=None,
+                category=EntityCategory.DIAGNOSTIC,
+                enabledByDefault=False,
+            )
+
     controller.sensor_entities["dura_i_consumer_load"] = InverterSensorEntity(
         hass,
         controller,

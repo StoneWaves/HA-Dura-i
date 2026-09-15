@@ -327,7 +327,7 @@ class Controller:
                 inverter_power_data = await inverter.read_holding_registers(0x1001, 64)
                 grid_power_data = await inverter.read_holding_registers(0x1300, 63)
                 battery_data = await inverter.read_holding_registers(0x2000, 19)
-                inverter_config_data = await inverter.read_holding_registers(0x2100, 34)
+                inverter_config_data = await inverter.read_holding_registers(0x2100, 64)
                 grid_config_data = await inverter.read_holding_registers(0x30B0, 12)
                 eps_data = await inverter.read_holding_registers(0x1350, 19)
 
@@ -338,7 +338,7 @@ class Controller:
                     "inverter_power (0x1001)": (inverter_power_data, 64),
                     "grid_power (0x1300)": (grid_power_data, 63),
                     "battery (0x2000)": (battery_data, 19),
-                    "inverter_config (0x2100)": (inverter_config_data, 34),
+                    "inverter_config (0x2100)": (inverter_config_data, 64),
                     "grid_config (0x30B0)": (grid_config_data, 12),
                     "eps (0x1350)": (eps_data, 19),
                 }
@@ -569,6 +569,16 @@ class Controller:
                 self.select_entities[
                     inverter.serial_number + "_hybrid_work_mode"
                 ].set_selected_option(str(work_mode))
+
+                # Mirror the raw value of every register in the 0x2100 block into
+                # its diagnostic sensor. Used to decode the scheduled-charge slots.
+                for offset, raw_value in enumerate(inverter_config_data.registers):
+                    register_address = 0x2100 + offset
+                    sensor = self.sensor_entities.get(
+                        inverter.serial_number + f"_config_reg_{register_address:04x}"
+                    )
+                    if sensor is not None:
+                        sensor.set_native_value(raw_value)
 
                 self.switch_entities[
                     inverter.serial_number + "_eps_enabled"

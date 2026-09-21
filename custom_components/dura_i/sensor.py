@@ -743,6 +743,24 @@ class InverterSensorEntity(SensorEntity):
         if not isinstance(new_state, (int, float)):
             return True
 
+        # Monotonic check for TOTAL_INCREASING sensors: reject significant decreases.
+        # Energy totals should only increase (or stay flat). A drop usually means
+        # the inverter returned zero/corrupted data. Allow tiny decreases (< 1 kWh)
+        # to handle floating-point rounding or register scaling quirks.
+        if (
+            self._attr_state_class == SensorStateClass.TOTAL_INCREASING
+            and isinstance(self.currentValue, (int, float))
+            and new_state < self.currentValue - 1.0
+        ):
+            _LOGGER.warning(
+                "Dura-i %s rejected value %s: TOTAL_INCREASING sensor decreased from %s (drop of %s kWh)",
+                self.entity_id,
+                new_state,
+                self.currentValue,
+                self.currentValue - new_state,
+            )
+            return False
+
         # Absolute range check.
         if self._min_value is not None and new_state < self._min_value:
             _LOGGER.warning(

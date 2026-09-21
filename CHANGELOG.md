@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-09-21
+
+### Added
+- Read-only diagnostic sensors exposing all 64 registers in the inverter config block (`0x2100`–`0x213F`) for reverse-engineering scheduled charge/time-of-use settings
+- Monotonic validation for `TOTAL_INCREASING` energy sensors to prevent spikes caused by temporary inverter register drops
+
+### Fixed
+- Energy total sensors (PV, grid in/out, battery in/out) now reject readings that drop significantly below the last known value, eliminating massive spikes when the inverter briefly returns corrupted/zero data
+
 ## [0.4.0] - Unreleased
 
 Forked from [HA-Skyline](https://github.com/iPeel/HA-Skyline) v0.3 by @iPeel and adapted for the Duracell Dura-i.

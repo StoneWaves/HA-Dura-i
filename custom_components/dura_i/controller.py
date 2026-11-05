@@ -171,6 +171,7 @@ class Controller:
         values["master_software_version"] = inverter.master_software_version
         values["slave_software_version"] = inverter.slave_software_version
         values["ems_software_version"] = inverter.ems_software_version
+        values["inverter_clock"] = _format_clock(values)
 
         return values
 
@@ -342,3 +343,24 @@ class Controller:
         if self._init_count >= len(PLATFORMS):
             await self.poll_inverters()
             await self.start_poller()
+
+
+def _format_clock(values: dict) -> str | None:
+    """Combine the clock registers into "YYYY-MM-DD HH:MM:SS", or None."""
+    parts = [
+        values.get(key)
+        for key in (
+            "clock_year",
+            "clock_month",
+            "clock_day",
+            "clock_hour",
+            "clock_minute",
+            "clock_second",
+        )
+    ]
+    if any(part is None for part in parts):
+        return None
+    year, month, day, hour, minute, second = parts
+    if year < 100:  # some firmware reports a two-digit year
+        year += 2000
+    return f"{year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"

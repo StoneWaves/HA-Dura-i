@@ -4,7 +4,21 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.0.0-beta.2] - 2026-11-05
+
+### Added
+- "Discharge Window 1 Start" and "Discharge Window 1 End" time controls (registers `0x2105`/`0x2106`, same format as the charge window). They come from the Solis map, are unconfirmed, and are disabled by default.
+- Read-only diagnostic sensors, disabled by default and all unconfirmed (Solis map): Charge and Discharge Window 1 Current Limit (`0x2104`, `0x2107`), Battery Reserve SoC (`0x211B`), Max Depth of Discharge (`0x212D`), Max Charge Limit Power (`0x2125`), Register 8505 (`0x2139`, meaning unknown), Inverter Clock (input registers 3021–3026), and Battery State of Health with Max/Min Cell Voltage (input registers 33140–33142).
+- Optional register blocks: the clock and BMS reads use input registers (function 04). If the inverter doesn't answer them, those sensors stay unknown, the main poll carries on, and the block is retried every 10 minutes.
+- "Force Charge Target SoC" control (register `0x2138`, 0–100 %). It comes from the Solis map and is unconfirmed on Dura-i hardware. Disabled by default.
+
+### Fixed
+- Controls no longer show red validation errors. The SoC limits use 1 % steps and the power limits 0.01 kW steps, so values set in the app (such as a 3.68 kW grid charge limit) are valid. Power values are rounded to the nearest watt when written, rather than truncated.
+- Power control maximums now come from the inverter model's datasheet, not a fixed 6 kW: 4.0 / 5.5 / 5.5 / 6.6 kW battery and grid charge, and 3.6 / 4.6 / 5.0 / 6.0 kW feed-in, for the 3.6K / 4.6K / 5K / 6K G3 models. On a 6K the battery limits now reach the full 6.6 kW, so the value the inverter reports is no longer flagged as out of range. Unrecognised models get the smallest (3.6K) limits to be safe, and a warning is logged.
+- Controls that earlier versions created hidden are un-hidden on startup. Nothing is hidden by default any more; controls are disabled by default instead. Entities you hid yourself stay hidden.
+- Two leftovers from an older version, a per-inverter "Dura-i Consumer Load" and "Dura-i Excess PV Power" registered under the raw serial number, are now removed on startup as well.
+
+## [2.0.0-beta.1] - 2026-11-05
 
 ### Breaking
 - Feed-in matching is removed: the "Match Feed In To Excess Solar" switch, the "Excess Target SoC" control, the "Dura-i Excess PV Power" sensor, the `dura_i.set_excess_params` service and their options-flow fields. The leftover entities are removed on startup.

@@ -23,6 +23,9 @@ _LOGGER = logging.getLogger(__name__)
 TIMES = (
     ("charge_window_1_start", "Charge Window 1 Start", "mdi:clock-start"),
     ("charge_window_1_end", "Charge Window 1 End", "mdi:clock-end"),
+    # From the Solis map; unconfirmed on Dura-i hardware.
+    ("discharge_window_1_start", "Discharge Window 1 Start", "mdi:clock-start"),
+    ("discharge_window_1_end", "Discharge Window 1 End", "mdi:clock-end"),
 )
 
 

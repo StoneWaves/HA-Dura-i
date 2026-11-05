@@ -15,5 +15,3 @@ PLATFORMS: list[Platform] = [
     Platform.SWITCH,
     Platform.TIME,
 ]
-
-MAX_FEED_IN_POWER_W = 6000

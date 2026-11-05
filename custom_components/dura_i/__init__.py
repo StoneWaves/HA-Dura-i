@@ -20,8 +20,12 @@ RETIRED_UNIQUE_ID_SUFFIXES = (
     "_max_load_spike_kw",
     "_excess_target_soc",  # feed-in matching
     "_match_feed_in_to_excess_power",
-    "dura_i_average_excess_pv_power",
+    "_average_excess_pv_power",  # both dura_i_… and older <serial>_… forms
 )
+
+# Older versions created the system-wide consumer load per inverter
+# ("<serial>_consumer_load"). Only "dura_i_consumer_load" is still provided.
+CURRENT_CONSUMER_LOAD_ID = "dura_i_consumer_load"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -52,19 +56,32 @@ async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 def _clean_up_entity_registry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Remove entities earlier versions created but no longer provide.
+    """Tidy entities left behind by earlier versions.
 
-    Without this they would linger as unavailable: the raw "Config Register"
-    debug sensors, the sanity-limit controls and the feed-in matching controls.
+    * Removes entities that are no longer provided, so they don't linger as
+      unavailable: the raw "Config Register" debug sensors, the sanity-limit
+      controls, the feed-in matching entities and an older per-inverter copy of
+      the consumer load sensor.
+    * Un-hides entities that earlier versions hid (all the controls were
+      created hidden). Entities the user hid themselves are left alone.
     """
     registry = er.async_get(hass)
     for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
         unique_id = entity.unique_id
-        if "_config_reg_" in unique_id or unique_id.endswith(
-            RETIRED_UNIQUE_ID_SUFFIXES
+        old_consumer_load = (
+            unique_id.endswith("_consumer_load")
+            and unique_id != CURRENT_CONSUMER_LOAD_ID
+        )
+        if (
+            "_config_reg_" in unique_id
+            or unique_id.endswith(RETIRED_UNIQUE_ID_SUFFIXES)
+            or old_consumer_load
         ):
             _LOGGER.info("Removing old entity %s from the registry", entity.entity_id)
             registry.async_remove(entity.entity_id)
+        elif entity.hidden_by is er.RegistryEntryHider.INTEGRATION:
+            _LOGGER.info("Un-hiding %s", entity.entity_id)
+            registry.async_update_entity(entity.entity_id, hidden_by=None)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

@@ -32,11 +32,16 @@ class DataType(Enum):
 
 @dataclass(frozen=True)
 class Block:
-    """A contiguous range of holding registers read in one request."""
+    """A contiguous range of registers read in one request."""
 
     name: str
     start: int
     count: int
+    # Read with function 04 (input registers) instead of 03 (holding).
+    input_registers: bool = False
+    # A failed read of an optional block just leaves its values as None; a
+    # failed read of any other block abandons the whole poll.
+    optional: bool = False
 
     def contains(self, address: int, words: int) -> bool:
         """Return True if ``words`` registers from ``address`` fit in the block."""
@@ -64,6 +69,10 @@ BLOCKS: tuple[Block, ...] = (
     Block("battery", 0x2000, 19),
     Block("inverter_config", 0x2100, 58),  # 0x2100-0x2139; 0x212E needs at least 47
     Block("grid_config", 0x30B0, 12),
+    # From the Solis map, as input registers. Unconfirmed on the Dura-i, so
+    # optional: if the inverter doesn't answer, these values are just None.
+    Block("clock", 3021, 6, input_registers=True, optional=True),
+    Block("bms", 33140, 3, input_registers=True, optional=True),
 )
 
 # Power registers are in units of 0.1 W; scaling by 0.0001 gives kW.
@@ -108,21 +117,47 @@ REGISTERS: dict[str, Register] = {
     "battery_energy_out_total": Register(0x2011, DataType.U32, 0.01),
     # --- Inverter settings (0x2100 block, writable) ---
     "hybrid_work_mode": Register(0x2100),
-    "charge_window_1_start": Register(0x2102, DataType.TIME),
-    "charge_window_1_end": Register(0x2103, DataType.TIME),
+    "charge_window_1_start": Register(0x2102, DataType.TIME),  # confirmed
+    "charge_window_1_end": Register(0x2103, DataType.TIME),  # confirmed
+    # Unconfirmed (Solis map): 0 = no limit.
+    "charge_window_1_current_limit": Register(0x2104, DataType.U16, 0.1),  # A
+    # Unconfirmed (Solis map), next to the confirmed charge window.
+    "discharge_window_1_start": Register(0x2105, DataType.TIME),
+    "discharge_window_1_end": Register(0x2106, DataType.TIME),
+    "discharge_window_1_current_limit": Register(0x2107, DataType.U16, 0.1),  # A
     "grid_max_charge_power": Register(0x2116),  # W
     "grid_max_charge_soc": Register(0x2117),  # %, max SoC when charging from grid (confirmed)
     "battery_max_charge_power": Register(0x2118),  # W
     "battery_max_soc": Register(0x2119),  # %, max SoC when charging from solar (confirmed)
     "battery_max_power": Register(0x211A),  # W
     "eps_enabled": Register(0x211C),  # 1 = on, 0 = off
+    # Unconfirmed (Solis map): minimum SoC kept in reserve. Reads 15.
+    "battery_reserve_soc": Register(0x211B),  # %
+    # Unconfirmed (Solis map): "hard max charge power". Reads 9000, above this
+    # inverter's 6,600 W, so it may well mean something else.
+    "max_charge_limit_power": Register(0x2125, DataType.U16, 0.001),  # W -> kW
+    # Unconfirmed (Solis map): max depth of discharge. Reads 80.
+    "max_depth_of_discharge": Register(0x212D),  # %
     # 0 = auto, 1 = force charge, 2 = force discharge (from the Solis map; unconfirmed)
     "force_charge": Register(0x212E),
+    # %, force-charge target SoC (from the Solis map; unconfirmed). Reads 80.
+    "force_charge_target_soc": Register(0x2138),
     # 0x2139 (8505): Solis map says "grid charge end SoC", but it reads 100 while
     # grid_max_charge_soc (0x2117) holds the real setting of 85. Meaning unknown.
     "unidentified_2139": Register(0x2139),
     # --- Grid settings (0x30B0 block, writable) ---
     "grid_max_feed_in_power": Register(0x30BA),  # W
+    # --- Inverter clock (input registers, unconfirmed) ---
+    "clock_year": Register(3021),  # 2000-2099, or 0-99
+    "clock_month": Register(3022),
+    "clock_day": Register(3023),
+    "clock_hour": Register(3024),
+    "clock_minute": Register(3025),
+    "clock_second": Register(3026),
+    # --- BMS (input registers, unconfirmed) ---
+    "battery_soh": Register(33140),  # %
+    "max_cell_voltage": Register(33141, DataType.U16, 0.001),  # V
+    "min_cell_voltage": Register(33142, DataType.U16, 0.001),  # V
 }
 
 
@@ -168,14 +203,14 @@ def decode(name: str, blocks: dict[str, list[int]]):
 def decode_all(blocks: dict[str, list[int]]) -> dict:
     """Decode every named register from the raw words of a completed poll.
 
-    TIME registers that hold an invalid value (hour > 23 or minute > 59) are
-    returned as None rather than raising.
+    Values are None for registers in an optional block that wasn't read, and
+    for TIME registers holding an invalid time (hour > 23 or minute > 59).
     """
     values = {}
     for name in REGISTERS:
         try:
             values[name] = decode(name, blocks)
-        except ValueError:
+        except (KeyError, ValueError):
             values[name] = None
     return values
 

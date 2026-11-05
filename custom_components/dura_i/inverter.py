@@ -23,6 +23,7 @@ VERSION_REGISTERS = (
     ("ems_software_version", 0x1A60, 3),
 )
 VERSION_POLL_INTERVAL_SECONDS = 7200
+OPTIONAL_BLOCK_RETRY_SECONDS = 600
 
 
 class InverterReadError(Exception):
@@ -54,12 +55,23 @@ class ModbusHost:
         return True
 
     async def read_holding_registers(self, start_address, num_registers, slave_address):
-        """Read registers from an inverter. Returns None on failure."""
+        """Read holding registers (function 03). Returns None on failure."""
+        return await self._read(
+            self.client.read_holding_registers, start_address, num_registers, slave_address
+        )
+
+    async def read_input_registers(self, start_address, num_registers, slave_address):
+        """Read input registers (function 04). Returns None on failure."""
+        return await self._read(
+            self.client.read_input_registers, start_address, num_registers, slave_address
+        )
+
+    async def _read(self, method, start_address, num_registers, slave_address):
         async with self._lock:
             if not await self._ensure_connected():
                 return None
             try:
-                response = await self.client.read_holding_registers(
+                response = await method(
                     address=start_address, count=num_registers, device_id=slave_address
                 )
             except (ModbusException, OSError) as err:
@@ -129,6 +141,10 @@ class Inverter:
         self.model_number = model_number
         self._host = host
         self._written_registers = {}
+        # Optional register blocks that didn't answer (logged once each), and
+        # when each may next be retried.
+        self._unavailable_blocks: set[str] = set()
+        self._optional_retry_at: dict[str, float] = {}
         self.previous_pv_energy_today = float(0)
         self.pv_energy_today_offset = float(0)
         self.master_software_version = ""
@@ -185,15 +201,48 @@ class Inverter:
     async def read_blocks(self) -> dict[str, list[int]]:
         """Read every register block in ``BLOCKS``.
 
-        Raises InverterReadError naming the first block that failed or came
-        back short, so a poll is never decoded from partial data.
+        Raises InverterReadError naming the first required block that failed or
+        came back short, so a poll is never decoded from partial data. Optional
+        blocks that fail are simply left out.
         """
         blocks = {}
         for block in BLOCKS:
-            response = await self.read_holding_registers(block.start, block.count)
+            # A failing optional block may time out rather than return an error,
+            # so don't hold up every poll retrying it.
+            if time.time() < self._optional_retry_at.get(block.name, 0):
+                continue
+
+            if block.input_registers:
+                response = await self._host.read_input_registers(
+                    block.start, block.count, slave_address=self._slave_address
+                )
+            else:
+                response = await self.read_holding_registers(block.start, block.count)
+
             if response is None or len(response.registers) < block.count:
-                raise InverterReadError(
-                    f"incomplete read of {block.name} block (0x{block.start:04X})"
+                if not block.optional:
+                    raise InverterReadError(
+                        f"incomplete read of {block.name} block (0x{block.start:04X})"
+                    )
+                self._optional_retry_at[block.name] = (
+                    time.time() + OPTIONAL_BLOCK_RETRY_SECONDS
+                )
+                if block.name not in self._unavailable_blocks:
+                    self._unavailable_blocks.add(block.name)
+                    _LOGGER.info(
+                        "Inverter %s doesn't answer the optional %s block (%s); "
+                        "its sensors will stay unknown. Retrying every %s minutes",
+                        self.serial_number,
+                        block.name,
+                        block.start,
+                        OPTIONAL_BLOCK_RETRY_SECONDS // 60,
+                    )
+                continue
+
+            if block.name in self._unavailable_blocks:
+                self._unavailable_blocks.discard(block.name)
+                _LOGGER.info(
+                    "Inverter %s now answers the %s block", self.serial_number, block.name
                 )
             blocks[block.name] = response.registers
         return blocks

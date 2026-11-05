@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from pymodbus.client import AsyncModbusTcpClient
+from pymodbus.exceptions import ModbusException
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -14,12 +15,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import (
-    DEFAULT_MAX_BATTERY_LOAD_KW,
-    DEFAULT_MAX_GRID_LOAD_KW,
-    DEFAULT_MAX_LOAD_SPIKE_KW,
-    DOMAIN,
-)
+from .const import DOMAIN
+from .registers import registers_to_string
 
 _LOGGER = logging.getLogger(__name__)
 STEP_USER_DATA_SCHEMA = vol.Schema(
@@ -43,32 +40,31 @@ class ModbusHub:
         self.port = port
 
     async def checkHost(self, host, port) -> bool:
-        """Test we can access the configured host."""
+        """Test we can read the inverter serial number from the configured host."""
+        client = AsyncModbusTcpClient(host=host, port=port)
         try:
-            client = AsyncModbusTcpClient(host=host, port=port)
             await client.connect()
-            if not client or not client.connected:
-                _LOGGER.error("Dura-i Modbus host invalid")
+            if not client.connected:
+                _LOGGER.error("Could not connect to Modbus host %s:%s", host, port)
                 return False
 
             response = await client.read_holding_registers(
                 address=0x1A10, count=8, device_id=1
             )
-            if not response:
-                _LOGGER.error("Dura-i Modbus no response from host")
+            if response.isError():
+                _LOGGER.error("No inverter answered on %s:%s: %s", host, port, response)
                 return False
 
-            serial = ""
-            for x in response.registers:
-                c = (x >> 8) & 0xFF
-                f = x & 0xFF
-
-                serial = serial + chr(c) + chr(f)
-
-            _LOGGER.info("Connected to inverter serial number %s", serial)
-        except Exception as e:  # noqa: BLE001
-            _LOGGER.error(e)
+            _LOGGER.info(
+                "Connected to inverter serial number %s",
+                registers_to_string(response.registers),
+            )
+        except (ModbusException, OSError) as err:
+            _LOGGER.error("Checking Modbus host %s:%s failed: %s", host, port, err)
             return False
+        finally:
+            # Don't leave the adapter holding a connection open.
+            client.close()
 
         return True
 
@@ -133,6 +129,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
         )
 
+    @staticmethod
     def async_get_options_flow(
         config_entry: ConfigEntry,  # noqa: N805
     ) -> OptionsFlow:
@@ -171,96 +168,24 @@ class OptionsFlowHandler(OptionsFlow):
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
-                # The sanity limits can also be adjusted live via the number
-                # controls, which store into options and take precedence over
-                # data. Clear those keys here so a value entered in this form
-                # actually takes effect rather than being shadowed by a stale
-                # control value.
-                options = dict(self.config_entry.options)
-                for key in (
-                    "max_grid_load_kw",
-                    "max_battery_load_kw",
-                    "max_load_spike_kw",
-                ):
-                    options.pop(key, None)
-
-                # self.config_entry.version = 1
+                # Host and port live in entry.data. Updating everything in one
+                # call fires the reload listener once. Options are cleared
+                # because nothing uses them (this also drops settings left by
+                # older versions).
                 self.hass.config_entries.async_update_entry(
                     self.config_entry,
                     data=user_input,
-                    options=options,
+                    options={},
                     title="Modbus TCP-RTU on " + user_input["host"],
                 )
-                return self.async_create_entry(
-                    title="Modbus TCP-RTU on " + user_input["host"],
-                    data=user_input,
-                )
+                return self.async_create_entry(data={})
 
-        clickhouse_url = ""
-        if "clickhouse_url" in self.config_entry.data:
-            clickhouse_url = self.config_entry.data["clickhouse_url"]
-
-        excess_rate_soc = 3
-        if "excess_rate_soc" in self.config_entry.data:
-            excess_rate_soc = self.config_entry.data["excess_rate_soc"]
-
-        excess_min_feed_in_rate = 0
-        if "excess_min_feed_in_rate" in self.config_entry.data:
-            excess_min_feed_in_rate = self.config_entry.data["excess_min_feed_in_rate"]
-
-        excess_max_soc_deviation_w = 3000
-        if "excess_max_soc_deviation_w" in self.config_entry.data:
-            excess_max_soc_deviation_w = self.config_entry.data[
-                "excess_max_soc_deviation_w"
-            ]
-        excess_load_entity_id = ""
-        if "excess_load_entity_id" in self.config_entry.data:
-            excess_load_entity_id = self.config_entry.data["excess_load_entity_id"]
-
-        excess_load_percentage = 100
-        if "excess_load_percentage" in self.config_entry.data:
-            excess_load_percentage = self.config_entry.data["excess_load_percentage"]
-
-        max_grid_load_kw = DEFAULT_MAX_GRID_LOAD_KW
-        if "max_grid_load_kw" in self.config_entry.data:
-            max_grid_load_kw = self.config_entry.data["max_grid_load_kw"]
-
-        max_battery_load_kw = DEFAULT_MAX_BATTERY_LOAD_KW
-        if "max_battery_load_kw" in self.config_entry.data:
-            max_battery_load_kw = self.config_entry.data["max_battery_load_kw"]
-
-        max_load_spike_kw = DEFAULT_MAX_LOAD_SPIKE_KW
-        if "max_load_spike_kw" in self.config_entry.data:
-            max_load_spike_kw = self.config_entry.data["max_load_spike_kw"]
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
                     vol.Required("host", default=self.config_entry.data["host"]): str,
                     vol.Required("port", default=self.config_entry.data["port"]): int,
-                    vol.Optional("clickhouse_url", default=clickhouse_url): str,
-                    vol.Optional("excess_rate_soc", default=excess_rate_soc): int,
-                    vol.Optional(
-                        "excess_load_percentage", default=excess_load_percentage
-                    ): int,
-                    vol.Optional(
-                        "excess_min_feed_in_rate", default=excess_min_feed_in_rate
-                    ): int,
-                    vol.Optional(
-                        "excess_max_soc_deviation_w", default=excess_max_soc_deviation_w
-                    ): int,
-                    vol.Optional(
-                        "excess_load_entity_id", default=excess_load_entity_id
-                    ): str,
-                    vol.Optional(
-                        "max_grid_load_kw", default=max_grid_load_kw
-                    ): vol.Coerce(float),
-                    vol.Optional(
-                        "max_battery_load_kw", default=max_battery_load_kw
-                    ): vol.Coerce(float),
-                    vol.Optional(
-                        "max_load_spike_kw", default=max_load_spike_kw
-                    ): vol.Coerce(float),
                 }
             ),
             errors=errors,

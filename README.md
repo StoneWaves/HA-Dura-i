@@ -47,7 +47,7 @@ Once installed, add your inverter from Settings > Devices > Integrations tab. Cl
 ### Power Sensors
 - **PV Power** - Total solar generation (kW)
 - **MPPT1/MPPT2 Power** - Individual string power (kW)
-- **Battery Load** - Battery charge/discharge power (kW, positive = charging)
+- **Battery Load** - Battery charge/discharge power (kW, negative = charging, positive = discharging)
 - **Grid Load** - Grid import/export power (kW, positive = importing)
 - **Current Load** - House consumption (kW)
 - **Inverter Load** - Total inverter output (kW)
@@ -60,7 +60,6 @@ Once installed, add your inverter from Settings > Devices > Integrations tab. Cl
 - **State of Charge** - Battery level (%)
 - **Battery Voltage** - Battery voltage (V)
 - **Battery Current** - Battery current (A)
-- **Battery Temperature** - Battery temperature (°C)
 
 ### Grid Sensors
 - **Grid Voltage** - Grid voltage (V)
@@ -71,7 +70,7 @@ Once installed, add your inverter from Settings > Devices > Integrations tab. Cl
 - **MPPT1/2 Current** - String current (A)
 
 ### Temperature
-- **Inverter Temp** - Inverter temperature (°C)
+- **System Temp** - Inverter temperature (°C)
 
 ### Binary Sensors
 - **Am Exporting** - Sustained grid export detected
@@ -79,51 +78,30 @@ Once installed, add your inverter from Settings > Devices > Integrations tab. Cl
 
 ## Controllable Parameters
 
-- **Battery Discharge Max Power** (W) - register 8474
-- **Grid Charge Max Power** (W) - register 8470
-- **Battery Max Charge Power** (W) - register 8472
-- **Grid Feed In Max Power** (W) - register 8485
-- **Charge End SoC** (%) - register 8473
-- **Excess Target SoC** (%) - software-controlled
+These are disabled by default so read-only users never see a control that changes the inverter. Enable the ones you want from the device page.
 
-## Feed In Excess Solar Mode
-
-The "Match Feed In To Excess Solar" switch attempts to automatically adjust grid feed-in power based on average excess solar production. This compensates for SoC to maintain a target battery level.
-
-Parameters can be configured via integration options or the `dura_i.set_excess_params` service.
+- **Hybrid Work Mode** - register 8448 (`0x2100`)
+- **Charge Window 1 Start** / **End** (time) - registers 8450 / 8451 (`0x2102` / `0x2103`)
+- **Grid Charge Max Power** (kW) - register 8470 (`0x2116`)
+- **Grid Charge Max SoC** (%) - register 8471 (`0x2117`): highest SoC the battery charges to from the grid
+- **Battery Max Charge Power** (kW) - register 8472 (`0x2118`)
+- **Solar Charge Max SoC** (%) - register 8473 (`0x2119`): highest SoC the battery charges to from solar
+- **Battery Discharge Max Power** (kW) - register 8474 (`0x211A`)
+- **EPS Enabled** - register 8476 (`0x211C`)
+- **Force Charge** - register 8494 (`0x212E`): on writes 1 (force charge), off writes 0 (normal). Taken from the Solis register map and not yet confirmed on Dura-i hardware.
+- **Grid Feed In Max Power** (kW) - register 12474 (`0x30BA`)
 
 ## Register Map Reference
 
-The Duracell Dura-i uses the following key Modbus holding registers:
+Every register the integration reads, with its address, data type and scale, is defined in [`registers.py`](custom_components/dura_i/registers.py). That file is the source of truth for what the code does. [`solis_dura_i_modbus_register_map.md`](solis_dura_i_modbus_register_map.md) is the wider reference used when looking for new registers.
 
-| Register | Description | Type | Scale |
-|----------|-------------|------|-------|
-| 4097 | Grid Voltage | uint16 | ×0.1 V |
-| 4100 | PV Power Total | uint16 | ×0.1 W |
-| 4112-4119 | MPPT1/2 Voltage, Current, Power | uint16 | various |
-| 4124 | Inverter Temperature | uint16 | °C |
-| 4130 | Energy Total | uint16 | kWh |
-| 4136 | Energy Today | uint16 | ×0.001 kWh |
-| 2041 | Grid Power | int16 | ×0.01 W |
-| 2046 | Load Power | int16 | ×0.01 W |
-| 4894 | Grid/CT Current | int16 | ×0.01 A |
-| 8192 | Battery SOC | uint16 | % |
-| 8198 | Battery Voltage | uint16 | ×0.1 V |
-| 8200 | Battery Current | int16 | ×0.01 A |
-| 8202 | Battery Power | int16 | ×0.1 W |
-| 8219 | Battery Temperature | uint16 | °C |
-| 8470 | Grid Charge Max Power | uint16 | W |
-| 8472 | Max Charge Power | uint16 | W |
-| 8473 | Charge End SOC | uint16 | % |
-| 8474 | Max Discharge Power | uint16 | W |
-| 8475 | Discharge End SOC | uint16 | % |
-| 8485 | Max Grid Input | uint16 | W |
+To expose another register, add it to `REGISTERS` in `registers.py` (growing its block in `BLOCKS` if needed), then add an entity for it in the matching platform file, e.g. a row in `INVERTER_SENSORS` in `sensor.py`.
 
 ## Known Limitations
 
 - The integration polls every 10 seconds.
-- The Dura-i may not expose a work mode selection register via Modbus (unlike the CYG Skyline). If you discover the correct register, you can re-enable the select entity.
-- Some register addresses may vary between firmware versions. If a sensor shows incorrect values, you may need to adjust the register offsets in `const.py`.
+- On some Dura-i firmware, changing the work mode over Modbus may be restricted.
+- Some register addresses may vary between firmware versions. If a sensor shows incorrect values, check its entry in `registers.py`.
 
 ## Troubleshooting
 

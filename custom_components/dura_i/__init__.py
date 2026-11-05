@@ -1,106 +1,80 @@
 """The Dura-i integration."""
+
 from __future__ import annotations
 
 import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN, PLATFORMS
 from .controller import Controller
 
 _LOGGER = logging.getLogger(__name__)
 
+# Unique-ID suffixes of entities earlier versions created but no longer provide.
+RETIRED_UNIQUE_ID_SUFFIXES = (
+    "_max_grid_load_kw",  # sanity-limit controls
+    "_max_load_spike_kw",
+    "_excess_target_soc",  # feed-in matching
+    "_match_feed_in_to_excess_power",
+    "dura_i_average_excess_pv_power",
+)
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Dura-i from a config entry."""
-
-    hass.data.setdefault(DOMAIN, {})
-
-    if DOMAIN not in hass.data:
-        hass.data[DOMAIN] = {}
-        hass.data[DOMAIN]["entities"] = []
-    _LOGGER.info("*** STARTUP***")
-
     controller = Controller(entry.data["host"], entry.data["port"], hass, entry)
-
-    if "clickhouse_url" in entry.data:
-        controller.clickhouse_url = entry.data["clickhouse_url"]
-
-    hass.data[DOMAIN]["controller"] = controller
     await controller.initialise()
+
+    if not controller.inverters:
+        controller.terminate()
+        # HA retries the setup later with back-off.
+        raise ConfigEntryNotReady(f"No Dura-i inverter answered at {entry.data['host']}")
+
+    hass.data.setdefault(DOMAIN, {})["controller"] = controller
+
+    _clean_up_entity_registry(hass, entry)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    return True
-
-
-def setup(hass: HomeAssistant, entry: ConfigEntry):
-    """Set up is called when Home Assistant is loading our component."""
-
-    def handle_set_setpoint(call):
-        controller = hass.data[DOMAIN]["controller"]
-
-        if "target_soc_percent" in call.data:
-            controller.excess_target_soc = int(call.data["target_soc_percent"])
-
-        if "target_soc_rate" in call.data:
-            controller.excess_rate_soc = float(call.data["target_soc_rate"]) / 10
-
-        if "min_feed_in_rate" in call.data:
-            controller.excess_min_feed_in_rate = int(call.data["min_feed_in_rate"])
-
-        if "rapid_change_threshold" in call.data:
-            controller.excess_rapid_change_threshold = int(
-                call.data["rapid_change_threshold"]
-            )
-
-        if "slow_change_threshold" in call.data:
-            controller.excess_slow_change_threshold = int(
-                call.data["slow_change_threshold"]
-            )
-
-        if "slow_change_period_seconds" in call.data:
-            controller.excess_slow_change_period_seconds = int(
-                call.data["slow_change_period_seconds"]
-            )
-
-        if "averaging_period_seconds" in call.data:
-            controller.excess_averaging_period_seconds = int(
-                call.data["averaging_period_seconds"]
-            )
-
-        if "max_soc_deviation_w" in call.data:
-            controller.excess_max_soc_deviation_kw = (
-                float(call.data["max_soc_deviation_w"]) / 1000
-            )
-
-        if ("excess_load_percentage") in call.data:
-            controller.excess_load_ratio = (
-                float(call.data["excess_load_percentage"]) / 100
-            )
-
-        if "excess_always_account_soc" in call.data:
-            controller.excess_always_account_soc = bool(
-                call.data["excess_always_account_soc"]
-            )
-
-    hass.services.register(DOMAIN, "set_excess_params", handle_set_setpoint)
-
-    _LOGGER.info("Registered Inverter services")
+    # Reconnect with the new host/port when they're changed in the options form.
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
     return True
+
+
+async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the integration after its settings change."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+def _clean_up_entity_registry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove entities earlier versions created but no longer provide.
+
+    Without this they would linger as unavailable: the raw "Config Register"
+    debug sensors, the sanity-limit controls and the feed-in matching controls.
+    """
+    registry = er.async_get(hass)
+    for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+        unique_id = entity.unique_id
+        if "_config_reg_" in unique_id or unique_id.endswith(
+            RETIRED_UNIQUE_ID_SUFFIXES
+        ):
+            _LOGGER.info("Removing old entity %s from the registry", entity.entity_id)
+            registry.async_remove(entity.entity_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    controller = hass.data[DOMAIN].pop("controller", None)
+    if controller is not None:
+        # Stops polling and closes the Modbus connections.
+        controller.terminate()
 
-    if hass.data[DOMAIN]["controller"] is not None:
-        hass.data[DOMAIN]["controller"].terminate()
-
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-
-    return unload_ok
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

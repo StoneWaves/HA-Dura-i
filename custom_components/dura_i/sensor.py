@@ -1,4 +1,14 @@
-"""Dura-i diagnostics sensors."""
+"""Dura-i sensors.
+
+Each sensor is one row in INVERTER_SENSORS (one per inverter) or SYSTEM_SENSORS
+(summed across inverters). ``value_key`` names a value produced by the poll:
+either a register in registers.py or one the controller derives (pv_power,
+inverter_load, eps_load, versions, consumer_load).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
 import logging
 
 from homeassistant.components.sensor import (
@@ -25,790 +35,249 @@ from .inverter import Inverter
 
 _LOGGER = logging.getLogger(__name__)
 
+DIAGNOSTIC = EntityCategory.DIAGNOSTIC
+
+
+@dataclass(frozen=True)
+class DuraSensor:
+    """Definition of one sensor."""
+
+    key: str  # unique-ID suffix; never change it for an existing sensor
+    name: str
+    icon: str
+    unit: str | None = UnitOfPower.KILO_WATT
+    device_class: SensorDeviceClass | None = SensorDeviceClass.POWER
+    state_class: SensorStateClass | None = SensorStateClass.MEASUREMENT
+    decimals: int | None = 2  # display precision
+    category: EntityCategory | None = None
+    enabled_by_default: bool = True
+    never_decreases: bool = False  # lifetime counters only, not daily totals
+    round_to: int | None = None  # round the stored value (cuts state churn)
+    value_key: str | None = None  # defaults to key
+
+    @property
+    def value(self) -> str:
+        return self.value_key or self.key
+
+
+def _energy(key, name, icon, **kwargs) -> DuraSensor:
+    return DuraSensor(
+        key,
+        name,
+        icon,
+        unit=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        **kwargs,
+    )
+
+
+def _lifetime(key, name, icon, **kwargs) -> DuraSensor:
+    return _energy(
+        key, name, icon, never_decreases=True, category=DIAGNOSTIC, **kwargs
+    )
+
+
+def _current(key, name, icon) -> DuraSensor:
+    return DuraSensor(
+        key,
+        name,
+        icon,
+        unit=UnitOfElectricCurrent.AMPERE,
+        device_class=SensorDeviceClass.CURRENT,
+        category=DIAGNOSTIC,
+    )
+
+
+def _voltage(key, name) -> DuraSensor:
+    return DuraSensor(
+        key,
+        name,
+        "mdi:lightning-bolt",
+        unit=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        decimals=1,
+        category=DIAGNOSTIC,
+    )
+
+
+def _version(key, name, icon) -> DuraSensor:
+    return DuraSensor(
+        key,
+        name,
+        icon,
+        unit=None,
+        device_class=None,
+        state_class=None,
+        decimals=None,
+        category=DIAGNOSTIC,
+        enabled_by_default=False,
+    )
+
+
+INVERTER_SENSORS: tuple[DuraSensor, ...] = (
+    DuraSensor(
+        "SoC",
+        "State of Charge",
+        "mdi:battery",
+        unit=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        decimals=0,
+        value_key="soc",
+    ),
+    # Power
+    DuraSensor("pv_power", "PV Power", "mdi:solar-power", round_to=1),
+    DuraSensor("mppt1_power", "MPPT1 Power", "mdi:solar-power", category=DIAGNOSTIC),
+    DuraSensor("mppt2_power", "MPPT2 Power", "mdi:solar-power", category=DIAGNOSTIC),
+    DuraSensor("battery_load", "Battery Load", "mdi:battery-minus-variant"),
+    DuraSensor("grid_load", "Grid Load", "mdi:transmission-tower", round_to=1),
+    DuraSensor("grid_tied_load", "Current Load", "mdi:home-lightning-bolt"),
+    DuraSensor("eps_load", "EPS Load", "mdi:power-socket"),
+    DuraSensor("inverter_load", "Inverter Load", "mdi:flash"),
+    # Energy
+    _energy("pv_energy_today", "PV Energy Today", "mdi:solar-power-variant"),
+    _lifetime(
+        "pv_energy_total", "PV Energy Total", "mdi:solar-power-variant", decimals=0
+    ),
+    _energy(
+        "grid_energy_in_today", "Grid Energy In Today", "mdi:transmission-tower-import"
+    ),
+    _lifetime(
+        "grid_energy_in_total", "Grid Energy In Total", "mdi:transmission-tower-import"
+    ),
+    _energy(
+        "grid_energy_out_today",
+        "Grid Energy Out Today",
+        "mdi:transmission-tower-export",
+    ),
+    _lifetime(
+        "grid_energy_out_total",
+        "Grid Energy Out Total",
+        "mdi:transmission-tower-export",
+    ),
+    _energy("battery_energy_in_today", "Battery Energy In Today", "mdi:battery-plus"),
+    _lifetime("battery_energy_in_total", "Battery Energy In Total", "mdi:battery-plus"),
+    _energy(
+        "battery_energy_out_today", "Battery Energy Out Today", "mdi:battery-minus"
+    ),
+    _lifetime(
+        "battery_energy_out_total", "Battery Energy Out Total", "mdi:battery-minus"
+    ),
+    # Electrical detail
+    _current("battery_current", "Battery Current", "mdi:current-dc"),
+    _current("grid_current", "Grid Current", "mdi:current-ac"),
+    _current("mppt1_current", "MPPT1 Current", "mdi:current-dc"),
+    _current("mppt2_current", "MPPT2 Current", "mdi:current-dc"),
+    _voltage("battery_voltage", "Battery Voltage"),
+    _voltage("grid_voltage", "Grid Voltage"),
+    _voltage("mppt1_voltage", "MPPT1 Voltage"),
+    _voltage("mppt2_voltage", "MPPT2 Voltage"),
+    DuraSensor(
+        "system_temp",
+        "System Temp",
+        "mdi:temperature-celsius",
+        unit=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        decimals=0,
+        category=DIAGNOSTIC,
+    ),
+    # Firmware
+    _version("master_software_version", "Version Master", "mdi:code-block-braces"),
+    _version("slave_software_version", "Version Slave", "mdi:code-block-brackets"),
+    _version("ems_software_version", "Version EMS", "mdi:code-block-parentheses"),
+)
+
+# Created once, not per inverter. consumer_load always exists; the rest are
+# only added when there is more than one inverter to sum.
+CONSUMER_LOAD = DuraSensor(
+    "consumer_load",
+    "Dura-i Consumer Load",
+    "mdi:power-socket",
+    enabled_by_default=False,
+    round_to=2,
+)
+SYSTEM_SENSORS: tuple[DuraSensor, ...] = tuple(
+    replace(sensor, name="Dura-i " + sensor.name, round_to=2)
+    for sensor in INVERTER_SENSORS
+    if sensor.key
+    in (
+        "pv_power",
+        "battery_load",
+        "grid_load",
+        "grid_tied_load",
+        "eps_load",
+        "inverter_load",
+    )
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up sensor platform."""
-
-    _LOGGER.info("Dura-i async_setup_entry setup")
-
     controller = hass.data[DOMAIN]["controller"]
 
     for inverter in controller.inverters:
-        controller.sensor_entities[
-            inverter.serial_number + "_soc"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "State of Charge",
-            "SoC",
-            "mdi:battery",
-            unitOfMeasurement=PERCENTAGE,
-            deviceClass=SensorDeviceClass.BATTERY,
-            decimals=0,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_pv_power"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "PV Power",
-            "pv_power",
-            "mdi:solar-power",
-            unitOfMeasurement=UnitOfPower.KILO_WATT,
-            deviceClass=SensorDeviceClass.POWER,
-            decimals=2,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_mppt1_power"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "MPPT1 Power",
-            "mppt1_power",
-            "mdi:solar-power",
-            unitOfMeasurement=UnitOfPower.KILO_WATT,
-            deviceClass=SensorDeviceClass.POWER,
-            decimals=2,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_mppt2_power"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "MPPT2 Power",
-            "mppt2_power",
-            "mdi:solar-power",
-            unitOfMeasurement=UnitOfPower.KILO_WATT,
-            deviceClass=SensorDeviceClass.POWER,
-            decimals=2,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_battery_load"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Battery Load",
-            "battery_load",
-            "mdi:battery-minus-variant",
-            unitOfMeasurement=UnitOfPower.KILO_WATT,
-            deviceClass=SensorDeviceClass.POWER,
-            decimals=2,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_grid_load"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Grid Load",
-            "grid_load",
-            "mdi:transmission-tower",
-            unitOfMeasurement=UnitOfPower.KILO_WATT,
-            deviceClass=SensorDeviceClass.POWER,
-            decimals=2,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_grid_tied_load"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Current Load",
-            "grid_tied_load",
-            "mdi:home-lightning-bolt",
-            unitOfMeasurement=UnitOfPower.KILO_WATT,
-            deviceClass=SensorDeviceClass.POWER,
-            decimals=2,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_eps_load"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "EPS Load",
-            "eps_load",
-            "mdi:power-socket",
-            unitOfMeasurement=UnitOfPower.KILO_WATT,
-            deviceClass=SensorDeviceClass.POWER,
-            decimals=2,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_inverter_load"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Inverter Load",
-            "inverter_load",
-            "mdi:flash",
-            unitOfMeasurement=UnitOfPower.KILO_WATT,
-            deviceClass=SensorDeviceClass.POWER,
-            decimals=2,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_pv_energy_today"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "PV Energy Today",
-            "pv_energy_today",
-            "mdi:solar-power-variant",
-            unitOfMeasurement=UnitOfEnergy.KILO_WATT_HOUR,
-            deviceClass=SensorDeviceClass.ENERGY,
-            stateClass=SensorStateClass.TOTAL_INCREASING,
-            decimals=2,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_pv_energy_total"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "PV Energy Total",
-            "pv_energy_total",
-            "mdi:solar-power-variant",
-            unitOfMeasurement=UnitOfEnergy.KILO_WATT_HOUR,
-            deviceClass=SensorDeviceClass.ENERGY,
-            stateClass=SensorStateClass.TOTAL_INCREASING,
-            decimals=0,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_grid_energy_in_total"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Grid Energy In Total",
-            "grid_energy_in_total",
-            "mdi:transmission-tower-import",
-            unitOfMeasurement=UnitOfEnergy.KILO_WATT_HOUR,
-            deviceClass=SensorDeviceClass.ENERGY,
-            stateClass=SensorStateClass.TOTAL_INCREASING,
-            decimals=2,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_grid_energy_out_total"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Grid Energy Out Total",
-            "grid_energy_out_total",
-            "mdi:transmission-tower-export",
-            unitOfMeasurement=UnitOfEnergy.KILO_WATT_HOUR,
-            deviceClass=SensorDeviceClass.ENERGY,
-            stateClass=SensorStateClass.TOTAL_INCREASING,
-            decimals=2,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_grid_energy_in_today"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Grid Energy In Today",
-            "grid_energy_in_today",
-            "mdi:transmission-tower-import",
-            unitOfMeasurement=UnitOfEnergy.KILO_WATT_HOUR,
-            deviceClass=SensorDeviceClass.ENERGY,
-            stateClass=SensorStateClass.TOTAL_INCREASING,
-            decimals=2,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_grid_energy_out_today"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Grid Energy Out Today",
-            "grid_energy_out_today",
-            "mdi:transmission-tower-export",
-            unitOfMeasurement=UnitOfEnergy.KILO_WATT_HOUR,
-            deviceClass=SensorDeviceClass.ENERGY,
-            stateClass=SensorStateClass.TOTAL_INCREASING,
-            decimals=2,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_battery_energy_out_total"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Battery Energy Out Total",
-            "battery_energy_out_total",
-            "mdi:battery-minus",
-            unitOfMeasurement=UnitOfEnergy.KILO_WATT_HOUR,
-            deviceClass=SensorDeviceClass.ENERGY,
-            stateClass=SensorStateClass.TOTAL_INCREASING,
-            decimals=2,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_battery_energy_in_total"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Battery Energy In Total",
-            "battery_energy_in_total",
-            "mdi:battery-plus",
-            unitOfMeasurement=UnitOfEnergy.KILO_WATT_HOUR,
-            deviceClass=SensorDeviceClass.ENERGY,
-            stateClass=SensorStateClass.TOTAL_INCREASING,
-            decimals=2,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_battery_energy_out_today"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Battery Energy Out Today",
-            "battery_energy_out_today",
-            "mdi:battery-minus",
-            unitOfMeasurement=UnitOfEnergy.KILO_WATT_HOUR,
-            deviceClass=SensorDeviceClass.ENERGY,
-            stateClass=SensorStateClass.TOTAL_INCREASING,
-            decimals=2,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_battery_energy_in_today"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Battery Energy In Today",
-            "battery_energy_in_today",
-            "mdi:battery-plus",
-            unitOfMeasurement=UnitOfEnergy.KILO_WATT_HOUR,
-            deviceClass=SensorDeviceClass.ENERGY,
-            stateClass=SensorStateClass.TOTAL_INCREASING,
-            decimals=2,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_battery_current"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Battery Current",
-            "battery_current",
-            "mdi:current-dc",
-            unitOfMeasurement=UnitOfElectricCurrent.AMPERE,
-            deviceClass=SensorDeviceClass.CURRENT,
-            decimals=2,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_grid_current"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Grid Current",
-            "grid_current",
-            "mdi:current-ac",
-            unitOfMeasurement=UnitOfElectricCurrent.AMPERE,
-            deviceClass=SensorDeviceClass.CURRENT,
-            decimals=2,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_mppt1_current"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "MPPT1 Current",
-            "mppt1_current",
-            "mdi:current-dc",
-            unitOfMeasurement=UnitOfElectricCurrent.AMPERE,
-            deviceClass=SensorDeviceClass.CURRENT,
-            decimals=2,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_mppt2_current"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "MPPT2 Current",
-            "mppt2_current",
-            "mdi:current-dc",
-            unitOfMeasurement=UnitOfElectricCurrent.AMPERE,
-            deviceClass=SensorDeviceClass.CURRENT,
-            decimals=2,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_battery_voltage"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Battery Voltage",
-            "battery_voltage",
-            "mdi:lightning-bolt",
-            unitOfMeasurement=UnitOfElectricPotential.VOLT,
-            deviceClass=SensorDeviceClass.VOLTAGE,
-            decimals=1,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_grid_voltage"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Grid Voltage",
-            "grid_voltage",
-            "mdi:lightning-bolt",
-            unitOfMeasurement=UnitOfElectricPotential.VOLT,
-            deviceClass=SensorDeviceClass.VOLTAGE,
-            decimals=1,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_mppt1_voltage"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "MPPT1 Voltage",
-            "mppt1_voltage",
-            "mdi:lightning-bolt",
-            unitOfMeasurement=UnitOfElectricPotential.VOLT,
-            deviceClass=SensorDeviceClass.VOLTAGE,
-            decimals=1,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_mppt2_voltage"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "MPPT2 Voltage",
-            "mppt2_voltage",
-            "mdi:lightning-bolt",
-            unitOfMeasurement=UnitOfElectricPotential.VOLT,
-            deviceClass=SensorDeviceClass.VOLTAGE,
-            decimals=1,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_system_temp"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "System Temp",
-            "system_temp",
-            "mdi:temperature-celsius",
-            unitOfMeasurement=UnitOfTemperature.CELSIUS,
-            deviceClass=SensorDeviceClass.TEMPERATURE,
-            decimals=0,
-            category=EntityCategory.DIAGNOSTIC,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_master_software_version"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Version Master",
-            "master_software_version",
-            "mdi:code-block-braces",
-            category=EntityCategory.DIAGNOSTIC,
-            deviceClass=None,
-            unitOfMeasurement=None,
-            stateClass=None,
-            enabledByDefault=False,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_slave_software_version"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Version Slave",
-            "slave_software_version",
-            "mdi:code-block-brackets",
-            category=EntityCategory.DIAGNOSTIC,
-            deviceClass=None,
-            unitOfMeasurement=None,
-            stateClass=None,
-            enabledByDefault=False,
-        )
-
-        controller.sensor_entities[
-            inverter.serial_number + "_ems_software_version"
-        ] = InverterSensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Version EMS",
-            "ems_software_version",
-            "mdi:code-block-parentheses",
-            category=EntityCategory.DIAGNOSTIC,
-            deviceClass=None,
-            unitOfMeasurement=None,
-            stateClass=None,
-            enabledByDefault=False,
-        )
-
-        # No point in the below as the inverter is always returning zero until this is fixed.
-        # controller.sensor_entities[
-        #    inverter.serial_number + "_battery_temp"
-        # ] = InverterSensorEntity(
-        #    hass,
-        #    controller,
-        #    inverter,
-        #    "Battery Temp",
-        #    "battery_temp",
-        #    "mdi:temperature-celsius",
-        #    unitOfMeasurement=UnitOfTemperature.CELSIUS,
-        #    deviceClass=SensorDeviceClass.TEMPERATURE,
-        #    decimals=0,
-        #    category=EntityCategory.DIAGNOSTIC,
-        # )
-
-        # Read-only diagnostic sensors exposing the raw values of every register
-        # in the 0x2100 inverter-config block. These are used to reverse-engineer
-        # the time-of-use / scheduled-charge slots that the Duracell app writes.
-        # They are disabled by default so they don't clutter the UI; enable them
-        # in the entity registry while decoding the schedule map, then set a
-        # schedule in the app and watch which registers change.
-        for offset in range(0, 64):
-            register_address = 0x2100 + offset
+        for description in INVERTER_SENSORS:
             controller.sensor_entities[
-                inverter.serial_number + f"_config_reg_{register_address:04x}"
-            ] = InverterSensorEntity(
-                hass,
-                controller,
-                inverter,
-                f"Config Register 0x{register_address:04X} ({register_address})",
-                f"config_reg_{register_address:04x}",
-                "mdi:memory",
-                unitOfMeasurement=None,
-                deviceClass=None,
-                stateClass=None,
-                category=EntityCategory.DIAGNOSTIC,
-                enabledByDefault=False,
-            )
+                inverter.serial_number + "_" + description.key
+            ] = InverterSensorEntity(controller, inverter, description)
 
-    controller.sensor_entities["dura_i_consumer_load"] = InverterSensorEntity(
-        hass,
-        controller,
-        None,
-        "Dura-i Consumer Load",
-        "consumer_load",
-        "mdi:power-socket",
-        unitOfMeasurement=UnitOfPower.KILO_WATT,
-        deviceClass=SensorDeviceClass.POWER,
-        decimals=2,
-        enabledByDefault=False,
-    )
-
-    controller.sensor_entities[
-        "dura_i_average_excess_pv_power"
-    ] = InverterSensorEntity(
-        hass,
-        controller,
-        None,
-        "Dura-i Excess PV Power",
-        "average_excess_pv_power",
-        "mdi:sun-wireless",
-        unitOfMeasurement=UnitOfPower.KILO_WATT,
-        deviceClass=SensorDeviceClass.POWER,
-        decimals=2,
-        enabledByDefault=False,
-    )
-
+    system_sensors = [CONSUMER_LOAD]
     if len(controller.inverters) > 1:
-        controller.sensor_entities["dura_i_pv_power"] = InverterSensorEntity(
-            hass,
-            controller,
-            None,
-            "Dura-i PV Power",
-            "pv_power",
-            "mdi:solar-power",
-            unitOfMeasurement=UnitOfPower.KILO_WATT,
-            deviceClass=SensorDeviceClass.POWER,
-            decimals=2,
+        system_sensors.extend(SYSTEM_SENSORS)
+    for description in system_sensors:
+        controller.sensor_entities["dura_i_" + description.key] = InverterSensorEntity(
+            controller, None, description
         )
 
-        controller.sensor_entities["dura_i_battery_load"] = InverterSensorEntity(
-            hass,
-            controller,
-            None,
-            "Dura-i Battery Load",
-            "battery_load",
-            "mdi:battery-minus-variant",
-            unitOfMeasurement=UnitOfPower.KILO_WATT,
-            deviceClass=SensorDeviceClass.POWER,
-            decimals=2,
-        )
-
-        controller.sensor_entities["dura_i_grid_load"] = InverterSensorEntity(
-            hass,
-            controller,
-            None,
-            "Dura-i Grid Load",
-            "grid_load",
-            "mdi:transmission-tower",
-            unitOfMeasurement=UnitOfPower.KILO_WATT,
-            deviceClass=SensorDeviceClass.POWER,
-            decimals=2,
-        )
-
-        controller.sensor_entities["dura_i_grid_tied_load"] = InverterSensorEntity(
-            hass,
-            controller,
-            None,
-            "Dura-i Current Load",
-            "grid_tied_load",
-            "mdi:home-lightning-bolt",
-            unitOfMeasurement=UnitOfPower.KILO_WATT,
-            deviceClass=SensorDeviceClass.POWER,
-            decimals=2,
-        )
-
-        controller.sensor_entities["dura_i_eps_load"] = InverterSensorEntity(
-            hass,
-            controller,
-            None,
-            "Dura-i EPS Load",
-            "eps_load",
-            "mdi:power-socket",
-            unitOfMeasurement=UnitOfPower.KILO_WATT,
-            deviceClass=SensorDeviceClass.POWER,
-            decimals=2,
-        )
-
-        controller.sensor_entities["dura_i_inverter_load"] = InverterSensorEntity(
-            hass,
-            controller,
-            None,
-            "Dura-i Inverter Load",
-            "inverter_load",
-            "mdi:flash",
-            unitOfMeasurement=UnitOfPower.KILO_WATT,
-            deviceClass=SensorDeviceClass.POWER,
-            decimals=2,
-        )
-
-    entities = controller.get_sensor_entities()
-
-    async_add_entities(entities)
+    async_add_entities(controller.get_sensor_entities())
 
     await controller.setup_done("sensor")
 
 
 class InverterSensorEntity(SensorEntity):
-    """The main Inverter sensor."""
+    """A sensor fed from the poll."""
+
+    _attr_has_entity_name = True
 
     def __init__(
-        self,
-        hass: HomeAssistant,
-        controller,
-        inverter: Inverter,
-        entityName,
-        entityType,
-        icon,
-        unitOfMeasurement=UnitOfPower.KILO_WATT,
-        deviceClass=SensorDeviceClass.POWER,
-        stateClass=SensorStateClass.MEASUREMENT,
-        decimals=-1,
-        category=None,
-        minValue=None,
-        maxValue=None,
-        maxDelta=None,
-        enabledByDefault=True,
+        self, controller, inverter: Inverter | None, description: DuraSensor
     ) -> None:
-        """Inverter sensor intialiser."""
+        """Create the sensor for one inverter, or system-wide if inverter is None."""
+        self.controller = controller
+        self.inverter = inverter
+        self.description = description
         self.currentValue = None
 
-        # Whether this entity shows up in HA by default. Set False to hide
-        # noisy/rarely-useful sensors; users can still opt in via the entity
-        # registry. The entity is still created so the poll loop can write to it.
-        self._attr_entity_registry_enabled_default = enabledByDefault
-
-        # Optional sanity-check bounds. Any of these can be None to skip that check.
-        # minValue/maxValue: absolute plausible range for the reading.
-        # maxDelta: largest change permitted between two consecutive polls.
-        self._min_value = minValue
-        self._max_value = maxValue
-        self._max_delta = maxDelta
-        # Number of consecutive rejected readings. Used so a genuine step change
-        # is eventually accepted rather than being rejected forever.
-        self._rejected_count = 0
-
         if inverter is not None:
-            self.inverter = inverter
+            object_id = inverter.serial_number + "_" + description.key
             self._attr_device_info = inverter.device_info
-            self._attr_unique_id = inverter.serial_number + "_" + entityType
-            entity_id = generate_entity_id(
-                "sensor.{}",
-                inverter.serial_number + "_" + entityType,
-                [],
-                self.hass,
-            )
         else:
-            entity_id = generate_entity_id(
-                "sensor.{}",
-                "dura_i_" + entityType,
-                [],
-                self.hass,
-            )
-            self._attr_unique_id = "dura_i_" + entityType
+            object_id = "dura_i_" + description.key
+        self._attr_unique_id = object_id
+        self.entity_id = generate_entity_id("sensor.{}", object_id, [], None)
 
-        self.controller = controller
-        self.hass = hass
-        self.entity_id = entity_id
+        self._attr_name = description.name
+        self._attr_translation_key = description.key.lower()
+        self._attr_icon = description.icon
+        self._attr_native_unit_of_measurement = description.unit
+        self._attr_device_class = description.device_class
+        self._attr_state_class = description.state_class
+        self._attr_entity_registry_enabled_default = description.enabled_by_default
+        if description.category is not None:
+            self._attr_entity_category = description.category
+        if description.decimals is not None:
+            self._attr_suggested_display_precision = description.decimals
 
-        # self._entity_name = entityName
-        self._attr_name = entityName
-        self._attr_has_entity_name = True
-
-        self._attr_translation_key: str = entityType.lower()
-
-        self._attr_native_unit_of_measurement = unitOfMeasurement
-        self._attr_native_device_class = deviceClass
-        self._attr_device_class = deviceClass
-        self._attr_state_class = stateClass
-        self._attr_icon = icon
-
-        if stateClass == SensorStateClass.TOTAL:
-            self._attr_last_reset = 0
-
-        if category is not None:
-            self._attr_entity_category = category
-
-        if decimals >= 0:
-            self._attr_suggested_display_precision = decimals
-
-    def _is_plausible(self, new_state) -> bool:
-        """Sanity check a new reading against configured bounds and the last value.
-
-        Returns True if the value looks sensible and should be written to HA,
-        False if it looks like a bad Modbus reading and should be dropped.
-        Only applies to numeric readings; anything else passes through.
-        """
-        if not isinstance(new_state, (int, float)):
-            return True
-
-        # Monotonic check for TOTAL_INCREASING sensors: reject significant decreases.
-        # Energy totals should only increase (or stay flat). A drop usually means
-        # the inverter returned zero/corrupted data. Allow tiny decreases (< 1 kWh)
-        # to handle floating-point rounding or register scaling quirks.
-        if (
-            self._attr_state_class == SensorStateClass.TOTAL_INCREASING
-            and isinstance(self.currentValue, (int, float))
-            and new_state < self.currentValue - 1.0
-        ):
-            _LOGGER.warning(
-                "Dura-i %s rejected value %s: TOTAL_INCREASING sensor decreased from %s (drop of %s kWh)",
-                self.entity_id,
-                new_state,
-                self.currentValue,
-                self.currentValue - new_state,
-            )
-            return False
-
-        # Absolute range check.
-        if self._min_value is not None and new_state < self._min_value:
-            _LOGGER.warning(
-                "Dura-i %s rejected value %s below minimum %s",
-                self.entity_id,
-                new_state,
-                self._min_value,
-            )
-            return False
-
-        if self._max_value is not None and new_state > self._max_value:
-            _LOGGER.warning(
-                "Dura-i %s rejected value %s above maximum %s",
-                self.entity_id,
-                new_state,
-                self._max_value,
-            )
-            return False
-
-        # Rate-of-change (spike) check against the last accepted value.
-        if (
-            self._max_delta is not None
-            and isinstance(self.currentValue, (int, float))
-            and abs(new_state - self.currentValue) > self._max_delta
-        ):
-            # Allow the value through if the same kind of jump keeps happening,
-            # i.e. reality has genuinely shifted and this isn't a one-off glitch.
-            if self._rejected_count < 3:
-                self._rejected_count += 1
-                _LOGGER.warning(
-                    "Dura-i %s rejected value %s: jump of %s exceeds max delta %s "
-                    "(rejection %s)",
-                    self.entity_id,
-                    new_state,
-                    abs(new_state - self.currentValue),
-                    self._max_delta,
-                    self._rejected_count,
-                )
-                return False
-
-            _LOGGER.info(
-                "Dura-i %s accepting value %s after %s rejections; treating as a real change",
-                self.entity_id,
-                new_state,
-                self._rejected_count,
-            )
-
-        return True
+    def handle_poll(self, values: dict) -> None:
+        """Take this sensor's value from a completed poll."""
+        value = values.get(self.description.value)
+        if value is None:
+            return
+        if self.description.round_to is not None:
+            value = round(value, self.description.round_to)
+        self.set_native_value(value)
 
     def set_native_value(self, new_state) -> None:
         """Set the HA value from the modbus response."""
@@ -816,14 +285,24 @@ class InverterSensorEntity(SensorEntity):
             # avoid noise...
             return
 
-        if not self._is_plausible(new_state):
+        # Lifetime energy totals must never go backwards: HA treats a drop as a
+        # meter reset and the energy dashboard then shows a huge spike. A drop of
+        # more than 1 kWh means the inverter returned bad data, so ignore it.
+        if (
+            self.description.never_decreases
+            and isinstance(new_state, (int, float))
+            and isinstance(self.currentValue, (int, float))
+            and new_state < self.currentValue - 1.0
+        ):
+            _LOGGER.warning(
+                "Dura-i %s ignored value %s: energy total dropped from %s",
+                self.entity_id,
+                new_state,
+                self.currentValue,
+            )
             return
 
-        # Value accepted, reset the run of rejections.
-        self._rejected_count = 0
-
         self.currentValue = new_state
-
         self._attr_native_value = new_state
 
         if self.hass is not None:

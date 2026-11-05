@@ -13,16 +13,7 @@ PLATFORMS: list[Platform] = [
     Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
+    Platform.TIME,
 ]
 
 MAX_FEED_IN_POWER_W = 6000
-MAX_GRID_EXPORT_POWER_W = 6000
-NO_AGGREGATION = True
-
-# Default sanity-check limits for grid/battery load readings, in kW.
-# These reject implausible Modbus reads before they reach Home Assistant.
-# Users can override these per-installation via the options flow.
-DEFAULT_MAX_GRID_LOAD_KW = 20
-DEFAULT_MAX_BATTERY_LOAD_KW = 20
-# Largest change permitted between two consecutive polls (spike guard), in kW.
-DEFAULT_MAX_LOAD_SPIKE_KW = 10

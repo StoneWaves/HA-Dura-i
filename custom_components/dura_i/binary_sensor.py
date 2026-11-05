@@ -1,4 +1,7 @@
 """Inverter Binary Sensor."""
+
+from __future__ import annotations
+
 import logging
 
 from homeassistant.components.binary_sensor import (
@@ -15,100 +18,66 @@ from .inverter import Inverter
 
 _LOGGER = logging.getLogger(__name__)
 
+# (key, name, icon, is_import)
+GRID_DIRECTION_SENSORS = (
+    ("grid_am_exporting", "Am Exporting", "mdi:transmission-tower-import", False),
+    ("grid_am_importing", "Am Importing", "mdi:transmission-tower-export", True),
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up binary sensors."""
-
-    _LOGGER.info("Number add entities callback")
-
     controller = hass.data[DOMAIN]["controller"]
 
     for inverter in controller.inverters:
-        controller.binary_sensor_entities[
-            inverter.serial_number + "_grid_am_exporting"
-        ] = InverterBinarySensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Am Exporting",
-            "grid_am_exporting",
-            "mdi:transmission-tower-import",
-            deviceClass=BinarySensorDeviceClass.POWER,
-        )
+        for key, name, icon, is_import in GRID_DIRECTION_SENSORS:
+            controller.binary_sensor_entities[inverter.serial_number + "_" + key] = (
+                GridDirectionSensor(controller, inverter, name, key, icon, is_import)
+            )
 
-        controller.binary_sensor_entities[
-            inverter.serial_number + "_grid_am_importing"
-        ] = InverterBinarySensorEntity(
-            hass,
-            controller,
-            inverter,
-            "Am Importing",
-            "grid_am_importing",
-            "mdi:transmission-tower-export",
-            deviceClass=BinarySensorDeviceClass.POWER,
-        )
-
-    entities = controller.get_binary_sensor_entities()
-
-    async_add_entities(entities)
+    async_add_entities(controller.get_binary_sensor_entities())
 
     await controller.setup_done("binary_sensor")
 
 
-class InverterBinarySensorEntity(BinarySensorEntity):
-    """A binary sensor for inverter entities."""
+class GridDirectionSensor(BinarySensorEntity):
+    """On while the inverter has steadily imported (or exported) for a while."""
+
+    _attr_device_class = BinarySensorDeviceClass.POWER
 
     def __init__(
         self,
-        hass: HomeAssistant,
         controller,
         inverter: Inverter,
         entityName,
         entityType,
         icon,
-        category=None,
-        deviceClass=None,
+        is_import: bool,
     ) -> None:
         """Init binary sensor entity."""
-        self.currentValue = None
-        self._attr_device_info = inverter.device_info
-        self.inverter = inverter
         self.controller = controller
-        self.hass = hass
-        entity_id = generate_entity_id(
-            "sensor.{}",
-            inverter.serial_number + "_" + entityType,
-            [],
-            self.hass,
+        self.inverter = inverter
+        self._is_import = is_import
+
+        self._attr_device_info = inverter.device_info
+        self.entity_id = generate_entity_id(
+            "binary_sensor.{}", inverter.serial_number + "_" + entityType, [], None
         )
-        self.entity_id = entity_id
         self._attr_unique_id = inverter.serial_number + "_" + entityType
-        self._entity_name = entityName
         self._attr_name = entityName
         self._attr_icon = icon
-
-        if deviceClass is not None:
-            self._attr_device_class = deviceClass
-
         self._attr_is_on = False
-        self.currentValue = False
 
-        if category is not None:
-            self._attr_entity_category = category
-
-    def set_binary_value(self, new_state: bool) -> None:
-        """Set the HomeAssistant sensor based on inverter."""
-        newValue = new_state
-
-        if self.currentValue is not None and self.currentValue == newValue:
-            # avoid noise...
+    def handle_poll(self, values: dict) -> None:
+        """Re-evaluate from the controller's grid load history."""
+        new_state = self.controller.am_exporting_importing(
+            self.inverter, self._is_import
+        )
+        if new_state == self._attr_is_on:
             return
 
-        self._attr_is_on = newValue
-        self.currentValue = newValue
-
+        self._attr_is_on = new_state
         if self.hass is not None:
-            self._async_write_ha_state()
-
+            self.async_write_ha_state()

@@ -14,7 +14,22 @@ from homeassistant.config_entries import ConfigEntry, OptionsFlow
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import selector
 
+from .auto_charge import (
+    DEFAULTS as AUTO_DEFAULTS,
+    FORECAST_FIELDS,
+    OPT_CAPACITY,
+    OPT_CONSUMPTION,
+    OPT_FORECAST_FIELD,
+    OPT_FORECAST_TODAY,
+    OPT_FORECAST_TOMORROW,
+    OPT_MARGIN,
+    OPT_RUN_TIME,
+    OPT_WINDOW_END,
+    OPT_WINDOW_SCHEDULE,
+    OPT_WINDOW_START,
+)
 from .const import DOMAIN
 from .registers import registers_to_string
 
@@ -182,11 +197,64 @@ class OptionsFlowHandler(OptionsFlow):
 
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("host", default=self.config_entry.data["host"]): str,
-                    vol.Required("port", default=self.config_entry.data["port"]): int,
-                }
-            ),
+            data_schema=_options_schema(self.hass, dict(self.config_entry.data)),
             errors=errors,
         )
+
+
+def _options_schema(hass: HomeAssistant, data: dict) -> vol.Schema:
+    """Connection settings plus the Auto Grid Charge planner's settings."""
+
+    def current(key):
+        return data.get(key, AUTO_DEFAULTS.get(key))
+
+    def suggested(key):
+        # Only ever pre-fills what the user chose before; nothing is picked
+        # automatically.
+        value = data.get(key)
+        return {"suggested_value": value} if value else {}
+
+    sensor = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+    percent = selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=0, max=100, step=1, unit_of_measurement="%", mode="box"
+        )
+    )
+    return vol.Schema(
+        {
+            vol.Required("host", default=data["host"]): str,
+            vol.Required("port", default=data["port"]): int,
+            vol.Optional(
+                OPT_FORECAST_TODAY, description=suggested(OPT_FORECAST_TODAY)
+            ): sensor,
+            vol.Optional(
+                OPT_FORECAST_TOMORROW, description=suggested(OPT_FORECAST_TOMORROW)
+            ): sensor,
+            vol.Required(
+                OPT_FORECAST_FIELD, default=current(OPT_FORECAST_FIELD)
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=list(FORECAST_FIELDS), translation_key="forecast_field"
+                )
+            ),
+            vol.Optional(OPT_CONSUMPTION, description=suggested(OPT_CONSUMPTION)): sensor,
+            vol.Required(OPT_CAPACITY, default=current(OPT_CAPACITY)): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, max=500, step=0.1, unit_of_measurement="kWh", mode="box"
+                )
+            ),
+            vol.Required(OPT_MARGIN, default=current(OPT_MARGIN)): percent,
+            vol.Optional(
+                OPT_WINDOW_SCHEDULE, description=suggested(OPT_WINDOW_SCHEDULE)
+            ): selector.EntitySelector(selector.EntitySelectorConfig(domain="schedule")),
+            vol.Required(
+                OPT_WINDOW_START, default=current(OPT_WINDOW_START)
+            ): selector.TimeSelector(),
+            vol.Required(
+                OPT_WINDOW_END, default=current(OPT_WINDOW_END)
+            ): selector.TimeSelector(),
+            vol.Required(
+                OPT_RUN_TIME, default=current(OPT_RUN_TIME)
+            ): selector.TimeSelector(),
+        }
+    )

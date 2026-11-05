@@ -84,19 +84,13 @@ The "Today" sensors reset at midnight. The "Total" sensors are lifetime counters
 - **Am Importing** - Sustained grid import detected
 
 ### Settings and Diagnostics (read-only, disabled by default)
-These show inverter settings and battery detail without letting you change them. Everything below except the firmware versions comes from the Solis register map and is **not yet confirmed** on Dura-i hardware.
+These show inverter settings without letting you change them. Everything below except the firmware versions comes from the Solis register map and is **not yet confirmed** on Dura-i hardware.
 
 - **Version Master / Slave / EMS** - Firmware versions
-- **Charge Window 1 Current Limit** (A) - register 8452 (`0x2104`), 0 = no limit
-- **Discharge Window 1 Current Limit** (A) - register 8455 (`0x2107`), 0 = no limit
-- **Battery Reserve SoC** (%) - register 8475 (`0x211B`)
+- **Battery Reserve SoC** (%) - register 8475 (`0x211B`). Auto Grid Charge also uses this as its reserve.
 - **Max Depth of Discharge** (%) - register 8493 (`0x212D`)
 - **Max Charge Limit Power** (kW) - register 8485 (`0x2125`). Reads 9 kW, above the inverter's own limit, so its meaning is doubtful.
 - **Register 8505 (Unidentified)** - register 8505 (`0x2139`), meaning unknown
-- **Inverter Clock** - input registers 3021–3026
-- **Battery State of Health** (%) and **Max / Min Cell Voltage** (V) - input registers 33140–33142
-
-The clock and battery values use input registers. If the inverter doesn't answer them, they stay unknown and are retried every 10 minutes.
 
 ## Controllable Parameters
 
@@ -125,6 +119,28 @@ The power controls' maximums follow your inverter model, from the Dura-i G3 data
 | PD-DH1P-6K-G3 | 6.6 kW | 6.0 kW |
 
 Unrecognised models get the 3.6 kW limits to be safe, and a warning is logged so the model can be added. On parallel systems each maximum is multiplied by the number of inverters. Your battery may set a lower limit, which the inverter enforces itself; for example a single Dura5 is about 5.1 kW.
+
+## Auto Grid Charge
+
+The inverter charges from the grid during your cheap window and stops at **Grid Charge Max SoC**. Auto Grid Charge picks that SoC each night from your solar forecast and your usual consumption, so the battery only takes as much cheap energy as tomorrow needs.
+
+**How it decides.** It steps through the day after the charge window in 30-minute slots, from the end of the window until the next one starts. Each slot adds the forecast solar and subtracts your average usage for that hour of the day over the last 7 days, from Home Assistant's long-term statistics. The battery is capped at full, since surplus solar is exported. The target is the lowest starting SoC that never drops below your reserve, plus a safety margin.
+
+**Setting it up**
+1. Open the Dura-i integration's **Configure** dialog.
+2. Choose your **solar forecast for today** and **for tomorrow**. Any sensor works:
+   - **Daily total** (kWh or Wh), e.g. from Forecast.Solar or your own template. It's spread across the day in the shape of your own PV output over the last week.
+   - **Hourly detail** (Solcast-style `detailedHourly` attribute). It's used hour by hour, with the estimate you pick (P10, P50 or P90).
+
+   Both days are needed because the target is written after midnight, by which point the day being planned has become "today".
+3. Set your **usable battery capacity** (14.4 kWh for a Dura16 LV, 4.6 kWh per Dura5) and the safety margin. The reserve comes from the inverter's own **Battery Reserve SoC** setting (register 8475), so there's nothing to set; until it has been read, 20 % is used.
+4. Tell it when your cheap window is, in one of two ways:
+   - **Recommended: a schedule helper** (Settings → Devices & services → Helpers → Schedule) that is on during your cheap window, chosen as the **Charge window schedule**. The target is calculated and written the moment the schedule turns on, when the window's end is known exactly. Changing the schedule, for example when the tariff times move with the seasons, needs nothing else.
+   - **Fixed times:** set the window start and end, and **Calculate and set the target at** to a time before the earliest window start (default 00:45).
+5. Watch **Auto Grid Charge Target SoC** for a few days. Its attributes show the forecast solar, expected use, the SoC needed before the margin, and which window it planned for.
+6. When you're happy with it, enable the **Auto Grid Charge** switch (disabled by default). It then writes the target to Grid Charge Max SoC each night. Turning it off leaves Grid Charge Max SoC at its last value.
+
+Nothing is chosen for you: the planner stays off until you pick the forecast sensors and set the capacity. Usage comes from the integration's own **Current Load** sensor unless you choose another energy or power sensor.
 
 ## Register Map Reference
 

@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.0.0-beta.3] - 2026-11-05
+
+### Added
+- **Auto Grid Charge.** Sets Grid Charge Max SoC each night from the solar forecast and your usual consumption. It simulates the battery in 30-minute steps from the end of the charge window to the next one, using your average hourly use over the last 7 days, and picks the lowest SoC that stays above your reserve, plus a margin. You choose the forecast sensors yourself: a plain daily total (spread in the shape of your own PV output) or Solcast-style hourly detail (P10 by default). Configure it in the integration options, along with the consumption sensor, battery capacity, margin and charge window. The reserve is the inverter's own Battery Reserve SoC (`0x211B`).
+  - New sensor **Auto Grid Charge Target SoC**. Its attributes show the forecast solar, expected use and the SoC needed.
+  - New switch **Auto Grid Charge**, disabled by default. While on, it writes the target each night.
+  - The cheap window can come from a **schedule helper**: the target is calculated and written as the schedule turns on, so windows that move with the seasons are followed automatically. Otherwise, fixed start/end times and a run time (default 00:45) are used.
+- The integration now depends on Home Assistant's recorder, for the usage history.
+
+### Removed
+- The Inverter Clock, Battery State of Health and Max/Min Cell Voltage sensors added in beta.2. They used input registers (function 04), which the Dura-i doesn't answer. The failed reads also stalled a poll for up to about 25 seconds every 10 minutes. The four entities are removed from the registry on startup.
+- The Charge and Discharge Window 1 Current Limit sensors added in beta.2. They're removed from the registry on startup.
+
 ## [2.0.0-beta.2] - 2026-11-05
 
 ### Added

@@ -78,6 +78,9 @@ class Controller:
         # follow-up poll can't overlap the background poll.
         self._poll_lock = asyncio.Lock()
         self._grid_history: dict[str, deque] = {}
+        # Each inverter's decoded values from its last successful poll, for
+        # features that need settings even when their entities are disabled.
+        self.last_values: dict[str, dict] = {}
         # Serial numbers of inverters whose last poll failed (for log throttling).
         self._failing: set[str] = set()
 
@@ -171,7 +174,6 @@ class Controller:
         values["master_software_version"] = inverter.master_software_version
         values["slave_software_version"] = inverter.slave_software_version
         values["ems_software_version"] = inverter.ems_software_version
-        values["inverter_clock"] = _format_clock(values)
 
         return values
 
@@ -181,6 +183,7 @@ class Controller:
             inverter.serial_number, deque(maxlen=GRID_HISTORY_MIN + 1)
         )
         history.append(values["grid_load"])
+        self.last_values[inverter.serial_number] = values
 
         for entity in chain(
             self.sensor_entities.values(),
@@ -343,24 +346,3 @@ class Controller:
         if self._init_count >= len(PLATFORMS):
             await self.poll_inverters()
             await self.start_poller()
-
-
-def _format_clock(values: dict) -> str | None:
-    """Combine the clock registers into "YYYY-MM-DD HH:MM:SS", or None."""
-    parts = [
-        values.get(key)
-        for key in (
-            "clock_year",
-            "clock_month",
-            "clock_day",
-            "clock_hour",
-            "clock_minute",
-            "clock_second",
-        )
-    ]
-    if any(part is None for part in parts):
-        return None
-    year, month, day, hour, minute, second = parts
-    if year < 100:  # some firmware reports a two-digit year
-        year += 2000
-    return f"{year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"

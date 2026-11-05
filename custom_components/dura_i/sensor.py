@@ -30,6 +30,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import generate_entity_id
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .auto_charge import AutoChargeTargetSensor
 from .const import DOMAIN
 from .inverter import Inverter
 
@@ -115,19 +116,18 @@ def _version(key, name, icon) -> DuraSensor:
     )
 
 
-def _readout(key, name, icon, unit=None, device_class=None, decimals=None, **kwargs):
-    """A read-only view of a register: diagnostic and disabled by default."""
+def _readout(key, name, icon, unit=None, device_class=None, decimals=None):
+    """A read-only view of a setting register: diagnostic, disabled by default."""
     return DuraSensor(
         key,
         name,
         icon,
         unit=unit,
         device_class=device_class,
-        state_class=kwargs.pop("state_class", None),
+        state_class=None,
         decimals=decimals,
         category=DIAGNOSTIC,
         enabled_by_default=False,
-        **kwargs,
     )
 
 
@@ -202,23 +202,8 @@ INVERTER_SENSORS: tuple[DuraSensor, ...] = (
     _version("slave_software_version", "Version Slave", "mdi:code-block-brackets"),
     _version("ems_software_version", "Version EMS", "mdi:code-block-parentheses"),
     # Read-only views of inverter settings. All from the Solis map and
-    # unconfirmed on Dura-i hardware (see registers.py).
-    _readout(
-        "charge_window_1_current_limit",
-        "Charge Window 1 Current Limit",
-        "mdi:current-dc",
-        unit=UnitOfElectricCurrent.AMPERE,
-        device_class=SensorDeviceClass.CURRENT,
-        decimals=1,
-    ),
-    _readout(
-        "discharge_window_1_current_limit",
-        "Discharge Window 1 Current Limit",
-        "mdi:current-dc",
-        unit=UnitOfElectricCurrent.AMPERE,
-        device_class=SensorDeviceClass.CURRENT,
-        decimals=1,
-    ),
+    # unconfirmed on Dura-i hardware, though the values look plausible
+    # (see registers.py).
     _readout(
         "battery_reserve_soc",
         "Battery Reserve SoC",
@@ -242,35 +227,6 @@ INVERTER_SENSORS: tuple[DuraSensor, ...] = (
         decimals=2,
     ),
     _readout("unidentified_2139", "Register 8505 (Unidentified)", "mdi:help-circle"),
-    # Input registers, unconfirmed on Dura-i hardware. These stay unknown if
-    # the inverter doesn't answer them.
-    _readout("inverter_clock", "Inverter Clock", "mdi:clock-outline"),
-    _readout(
-        "battery_soh",
-        "Battery State of Health",
-        "mdi:battery-heart-variant",
-        unit=PERCENTAGE,
-        decimals=0,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-    _readout(
-        "max_cell_voltage",
-        "Battery Max Cell Voltage",
-        "mdi:battery-arrow-up-outline",
-        unit=UnitOfElectricPotential.VOLT,
-        device_class=SensorDeviceClass.VOLTAGE,
-        decimals=3,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-    _readout(
-        "min_cell_voltage",
-        "Battery Min Cell Voltage",
-        "mdi:battery-arrow-down-outline",
-        unit=UnitOfElectricPotential.VOLT,
-        device_class=SensorDeviceClass.VOLTAGE,
-        decimals=3,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
 )
 
 # Created once, not per inverter. consumer_load always exists; the rest are
@@ -317,7 +273,11 @@ async def async_setup_entry(
             controller, None, description
         )
 
-    async_add_entities(controller.get_sensor_entities())
+    entities = controller.get_sensor_entities()
+    # Not fed by the poll, so kept out of controller.sensor_entities.
+    if controller.inverters:
+        entities.append(AutoChargeTargetSensor(hass.data[DOMAIN]["auto_charge"]))
+    async_add_entities(entities)
 
     await controller.setup_done("sensor")
 

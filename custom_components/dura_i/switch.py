@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import generate_entity_id
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .auto_charge import AutoChargeSwitch
 from .const import DOMAIN
 from .inverter import Inverter
 from .registers import REGISTERS
@@ -43,7 +44,11 @@ async def async_setup_entry(
             )
         )
 
-    async_add_entities(controller.get_switch_entities())
+    entities = controller.get_switch_entities()
+    # Not fed by the poll, so kept out of controller.switch_entities.
+    if controller.inverters:
+        entities.append(AutoChargeSwitch(hass.data[DOMAIN]["auto_charge"]))
+    async_add_entities(entities)
 
     await controller.setup_done("switch")
 

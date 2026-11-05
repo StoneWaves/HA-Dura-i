@@ -9,6 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import entity_registry as er
 
+from .auto_charge import AutoChargeManager
 from .const import DOMAIN, PLATFORMS
 from .controller import Controller
 
@@ -21,6 +22,12 @@ RETIRED_UNIQUE_ID_SUFFIXES = (
     "_excess_target_soc",  # feed-in matching
     "_match_feed_in_to_excess_power",
     "_average_excess_pv_power",  # both dura_i_… and older <serial>_… forms
+    "_inverter_clock",  # input-register sensors (beta.2); the Dura-i doesn't answer
+    "_battery_soh",
+    "_max_cell_voltage",
+    "_min_cell_voltage",
+    "_charge_window_1_current_limit",  # read-only views dropped in beta.3
+    "_discharge_window_1_current_limit",
 )
 
 # Older versions created the system-wide consumer load per inverter
@@ -38,11 +45,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # HA retries the setup later with back-off.
         raise ConfigEntryNotReady(f"No Dura-i inverter answered at {entry.data['host']}")
 
+    auto_charge = AutoChargeManager(hass, controller, dict(entry.data))
     hass.data.setdefault(DOMAIN, {})["controller"] = controller
+    hass.data[DOMAIN]["auto_charge"] = auto_charge
 
     _clean_up_entity_registry(hass, entry)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    auto_charge.async_start()
+    entry.async_on_unload(auto_charge.async_stop)
 
     # Reconnect with the new host/port when they're changed in the options form.
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
@@ -86,6 +98,7 @@ def _clean_up_entity_registry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    hass.data[DOMAIN].pop("auto_charge", None)  # its timers stop via async_on_unload
     controller = hass.data[DOMAIN].pop("controller", None)
     if controller is not None:
         # Stops polling and closes the Modbus connections.

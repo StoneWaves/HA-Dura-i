@@ -108,6 +108,7 @@ These are disabled by default so read-only users never see a control that change
 - **Force Charge** - register 8494 (`0x212E`): on writes 1 (force charge), off writes 0 (normal). Taken from the Solis register map and not yet confirmed on Dura-i hardware.
 - **Force Charge Target SoC** (%) - register 8504 (`0x2138`): the SoC a force charge stops at. Taken from the Solis register map and not yet confirmed on Dura-i hardware.
 - **Grid Feed In Max Power** (kW) - register 12474 (`0x30BA`)
+- **Auto Grid Charge**, **Keep Charge Window Set** and **Delay Grid Charge Start** (switches) - see [Auto Grid Charge](#auto-grid-charge). They write Grid Charge Max SoC and Charge Window 1 for you.
 
 The power controls' maximums follow your inverter model, from the Dura-i G3 datasheet:
 
@@ -124,7 +125,12 @@ Unrecognised models get the 3.6 kW limits to be safe, and a warning is logged so
 
 The inverter charges from the grid during your cheap window and stops at **Grid Charge Max SoC**. Auto Grid Charge picks that SoC each night from your solar forecast and your usual consumption, so the battery only takes as much cheap energy as tomorrow needs.
 
-**How it decides.** It steps through the day after the charge window in 30-minute slots, from the end of the window until the next one starts. Each slot adds the forecast solar and subtracts your average usage for that hour of the day over the last 7 days, from Home Assistant's long-term statistics. The battery is capped at full, since surplus solar is exported. The target is the lowest starting SoC that never drops below your reserve, plus a safety margin.
+**How it decides.** It steps through the day after the charge window in 30-minute slots, from the end of the window until the next one starts. Each slot adds the forecast solar and subtracts your average usage for that hour of the day over the last 7 days, from Home Assistant's long-term statistics. The battery is capped at full, since surplus solar is exported. What happens next depends on the **target strategy** you pick in the options:
+
+- **Minimum** (the default): the lowest starting SoC that never drops below your reserve, plus the safety margin. It buys only what tomorrow needs.
+- **Maximum**: the highest starting SoC that doesn't cause any extra solar to be exported for lack of room, less the margin. It buys as much cheap energy as the solar leaves room for, without solar being exported for lack of space, and never goes below the minimum. On days when the solar never fills the battery (most of winter), that means 100 % less the margin. Here the margin is room for more solar than forecast, so the typical (P50) or optimistic (P90) estimate is the cautious choice, not P10.
+
+The target sensor's attributes show both: `minimum_target_soc` and `max_soc_before_margin`.
 
 **Setting it up**
 1. Open the Dura-i integration's **Configure** dialog.
@@ -133,12 +139,18 @@ The inverter charges from the grid during your cheap window and stops at **Grid 
    - **Hourly detail** (Solcast-style `detailedHourly` attribute). It's used hour by hour, with the estimate you pick (P10, P50 or P90).
 
    Both days are needed because the target is written after midnight, by which point the day being planned has become "today".
-3. Set your **usable battery capacity** (14.4 kWh for a Dura16 LV, 4.6 kWh per Dura5) and the safety margin. The reserve comes from the inverter's own **Battery Reserve SoC** setting (register 8475), so there's nothing to set; until it has been read, 20 % is used.
+3. Set your **usable battery capacity** (14.4 kWh for a Dura16 LV, 4.6 kWh per Dura5), the **target strategy** and the safety margin. The reserve comes from the inverter's own **Battery Reserve SoC** setting (register 8475), so there's nothing to set; until it has been read, 20 % is used.
 4. Tell it when your cheap window is, in one of two ways:
    - **Recommended: a schedule helper** (Settings → Devices & services → Helpers → Schedule) that is on during your cheap window, chosen as the **Charge window schedule**. The target is calculated and written the moment the schedule turns on, when the window's end is known exactly. Changing the schedule, for example when the tariff times move with the seasons, needs nothing else.
    - **Fixed times:** set the window start and end, and **Calculate and set the target at** to a time before the earliest window start (default 00:45).
 5. Watch **Auto Grid Charge Target SoC** for a few days. Its attributes show the forecast solar, expected use, the SoC needed before the margin, and which window it planned for.
 6. When you're happy with it, enable the **Auto Grid Charge** switch (disabled by default). It then writes the target to Grid Charge Max SoC each night. Turning it off leaves Grid Charge Max SoC at its last value.
+
+**Keeping the charge window set.** The inverter clears Charge Window 1 to 00:00–00:00 about 10 seconds after each window ends, so without help it won't grid-charge the next night. Turn on the **Keep Charge Window Set** switch (disabled by default) and the integration writes the window back: a minute after each window ends, as the next one opens, and on every 30-minute refresh if it has been cleared or changed. It uses the same window as the planner, from the schedule helper or the fixed times, rounded to the minute. This works separately from Auto Grid Charge, so you can keep the window set while choosing Grid Charge Max SoC yourself. Its attributes show the window it will keep. With a schedule helper, the window's length comes from the schedule's last full on period in the recorder; until one has been seen, the window is left alone. While the switch is on, a window changed in the app is put back within 30 minutes.
+
+**Charging late in the window.** By default the battery charges as soon as the window opens, then sits full for hours while the grid runs the house. Turn on **Delay Grid Charge Start** (disabled by default) to move the window's start later, so the battery reaches its set point about 30 minutes before the window ends. From 30 minutes before the window opens, the start is re-planned every minute from the current SoC, the set point (the Auto Grid Charge target while that switch is on, otherwise Grid Charge Max SoC), the lower of Grid and Battery Max Charge Power, and how much the battery is expected to drain before charging starts (your usual usage for that hour). It assumes the battery charges at full set power, but allows 25 % extra charge time in case the battery holds it lower (a smaller or cold battery, for example). With the 30 minutes before the window ends, that covers charging at about 70 % of the set power, at the cost of usually finishing a little early. Once charging has started the start isn't touched again, and the window keeps its usual end, so a slower charge still has until then. The charge rate is learned from each night's charge (SoC % per kWh, shown as `learned_soc_per_kwh`); until then a cautious guess is used that starts a little early. The switch's attributes show tonight's planned start and the rates it used. It keeps the window set as well, so it works with or without **Keep Charge Window Set**.
+
+The trade-off: before charging starts, the battery runs the house, and that energy is then put back from the grid. It's all at the cheap rate, but the round trip loses roughly 10–15 %, so expect a few pence a night and a slightly deeper cycle.
 
 Nothing is chosen for you: the planner stays off until you pick the forecast sensors and set the capacity. Usage comes from the integration's own **Current Load** sensor unless you choose another energy or power sensor.
 

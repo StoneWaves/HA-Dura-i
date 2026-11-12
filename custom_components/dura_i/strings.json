@@ -29,6 +29,7 @@
           "auto_charge_forecast_field": "Estimate to use (hourly forecast sensors only)",
           "auto_charge_consumption": "Consumption sensor (leave empty to use Current Load)",
           "auto_charge_capacity_kwh": "Usable battery capacity (kWh, 0 = planner off)",
+          "auto_charge_strategy": "Target strategy",
           "auto_charge_margin_soc": "Safety margin added to the target",
           "auto_charge_window_start": "Cheap charge window start (if no schedule)",
           "auto_charge_window_end": "Cheap charge window end (if no schedule)",
@@ -41,7 +42,8 @@
           "auto_charge_forecast_field": "For sensors with Solcast-style hourly detail: pessimistic (P10) rarely leaves you short; typical (P50) charges less on average. Ignored for plain totals.",
           "auto_charge_consumption": "An energy (kWh) or power (kW/W) sensor. Its last 7 days of hourly statistics give your usual usage for each hour of the day.",
           "auto_charge_capacity_kwh": "For example 14.4 for a Dura16 LV, or 4.6 per Dura5. Set this to turn on the Auto Grid Charge planner.",
-          "auto_charge_margin_soc": "Extra SoC on top of what the forecast says you need.",
+          "auto_charge_strategy": "Minimum charges only what tomorrow needs to stay above the reserve. Maximum charges as much as the solar forecast leaves room for, so the battery fills from cheap energy without forcing solar to be exported; it never goes below the minimum. In winter, when the solar never fills the battery, maximum charges to 100 % less the margin.",
+          "auto_charge_margin_soc": "Minimum: extra SoC added on top of what you need. Maximum: room left below the solar limit, in case there is more solar than forecast.",
           "auto_charge_window_start": "When the cheap window usually starts. Used to work out where the day being planned ends.",
           "auto_charge_window_end": "When the cheap window usually ends. The plan starts here, when the battery is expected to be at the target. If your window moves with the seasons, an approximate time is fine.",
           "auto_charge_run_time": "Pick a time before your earliest charge window start (e.g. 00:45 if the window moves between 01:00 and 02:00). The target is written then, while the Auto Grid Charge switch is on.",
@@ -63,6 +65,12 @@
         "estimate10": "Pessimistic (P10)",
         "estimate": "Typical (P50)",
         "estimate90": "Optimistic (P90)"
+      }
+    },
+    "strategy": {
+      "options": {
+        "minimum": "Minimum: just what tomorrow needs",
+        "maximum": "Maximum: as much as the solar leaves room for"
       }
     }
   }

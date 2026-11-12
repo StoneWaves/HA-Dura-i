@@ -26,9 +26,11 @@ from .auto_charge import (
     OPT_FORECAST_TOMORROW,
     OPT_MARGIN,
     OPT_RUN_TIME,
+    OPT_STRATEGY,
     OPT_WINDOW_END,
     OPT_WINDOW_SCHEDULE,
     OPT_WINDOW_START,
+    STRATEGIES,
 )
 from .const import DOMAIN
 from .registers import registers_to_string
@@ -241,6 +243,13 @@ def _options_schema(hass: HomeAssistant, data: dict) -> vol.Schema:
             vol.Required(OPT_CAPACITY, default=current(OPT_CAPACITY)): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=0, max=500, step=0.1, unit_of_measurement="kWh", mode="box"
+                )
+            ),
+            vol.Required(
+                OPT_STRATEGY, default=current(OPT_STRATEGY)
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=list(STRATEGIES), translation_key="strategy"
                 )
             ),
             vol.Required(OPT_MARGIN, default=current(OPT_MARGIN)): percent,

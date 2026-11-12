@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.0.0-beta.4] - 2026-11-12
+
+### Added
+- **Keep Charge Window Set** switch, disabled by default. The inverter clears Charge Window 1 to 00:00–00:00 shortly after each window ends. While this switch is on, the integration writes the planner's window back: a minute after each window ends, as the next one opens, and on every 30-minute refresh if it has been cleared or changed. It works without Auto Grid Charge, so you can keep the window while setting Grid Charge Max SoC by hand.
+- **Delay Grid Charge Start** switch, disabled by default. It moves the charge window's start later so the battery reaches its set point about 30 minutes before the window ends, instead of charging at the start and sitting full. The start is re-planned every minute from 30 minutes before the window opens, using the SoC, the set point, the charge power, the expected drain until charging starts, and a charge rate learned from each night's grid charge. It allows 25 % extra charge time in case the battery charges slower than the set power. Once charging starts it's left alone, and the window's end doesn't change. The switch's attributes show the plan.
+- **Target strategy** option for Auto Grid Charge. **Minimum** (the default, unchanged) charges the lowest SoC that stays above the reserve, plus the margin. **Maximum** charges the highest SoC that doesn't cause any extra solar to be exported for lack of room, less the margin, and never below the minimum, so the battery takes as much cheap energy as the solar leaves room for. The target sensor shows both as `minimum_target_soc` and `max_soc_before_margin`, with the chosen `strategy`.
+
+### Fixed
+- With a schedule helper, a restart no longer forgets the window's length, or takes the restart time as the start of a window already in progress. Both now come from the schedule's history in the recorder. Before, the night's plan after a restart could use the fixed times' length.
+
 ## [2.0.0-beta.3] - 2026-11-05
 
 ### Added

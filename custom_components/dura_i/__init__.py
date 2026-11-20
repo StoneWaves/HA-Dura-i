@@ -28,6 +28,8 @@ RETIRED_UNIQUE_ID_SUFFIXES = (
     "_min_cell_voltage",
     "_charge_window_1_current_limit",  # read-only views dropped in beta.3
     "_discharge_window_1_current_limit",
+    "_force_charge",  # force charge controls dropped in beta.5
+    "_force_charge_target_soc",
 )
 
 # Older versions created the system-wide consumer load per inverter
@@ -101,8 +103,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN].pop("auto_charge", None)  # its timers stop via async_on_unload
     controller = hass.data[DOMAIN].pop("controller", None)
     if controller is not None:
-        # Stops polling and closes the Modbus connections.
-        controller.terminate()
+        # Stops polling (waiting for it to exit) and closes the Modbus connections.
+        await controller.async_terminate()
 
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 

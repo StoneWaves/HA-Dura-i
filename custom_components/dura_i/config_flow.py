@@ -32,7 +32,7 @@ from .auto_charge import (
     OPT_WINDOW_START,
     STRATEGIES,
 )
-from .const import DOMAIN
+from .const import DOMAIN, MODBUS_TIMEOUT_SECONDS
 from .registers import registers_to_string
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,7 +58,9 @@ class ModbusHub:
 
     async def checkHost(self, host, port) -> bool:
         """Test we can read the inverter serial number from the configured host."""
-        client = AsyncModbusTcpClient(host=host, port=port)
+        client = AsyncModbusTcpClient(
+            host=host, port=port, timeout=MODBUS_TIMEOUT_SECONDS, retries=1
+        )
         try:
             await client.connect()
             if not client.connected:

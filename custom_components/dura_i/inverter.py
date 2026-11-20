@@ -11,7 +11,14 @@ from pymodbus.exceptions import ModbusException
 
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from .const import DOMAIN, INVERTER_POLL_INTERVAL_SECONDS
+from .const import (
+    DOMAIN,
+    INVERTER_POLL_INTERVAL_SECONDS,
+    MODBUS_MAX_REGISTERS_PER_READ,
+    MODBUS_READ_ATTEMPTS,
+    MODBUS_REQUEST_GAP_SECONDS,
+    MODBUS_TIMEOUT_SECONDS,
+)
 from .registers import BLOCKS, registers_to_string
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,9 +48,14 @@ class ModbusHost:
         self.host = host
         self.port = port
         self.client = AsyncModbusTcpClient(
-            host=self.host, port=self.port, framer=FramerType.SOCKET
+            host=self.host,
+            port=self.port,
+            framer=FramerType.SOCKET,
+            timeout=MODBUS_TIMEOUT_SECONDS,
+            retries=0,
         )
         self._lock = asyncio.Lock()
+        self._last_request = 0.0
 
     async def _ensure_connected(self) -> bool:
         if not self.client.connected:
@@ -53,24 +65,55 @@ class ModbusHost:
             return False
         return True
 
+    async def _pace(self) -> None:
+        """Leave a short gap after the previous request. Call with the lock held."""
+        wait = self._last_request + MODBUS_REQUEST_GAP_SECONDS - time.monotonic()
+        if wait > 0:
+            await asyncio.sleep(wait)
+
+    def _reset_connection(self) -> None:
+        """Drop the socket so a late reply can't be matched to the next request."""
+        self.client.close()
+
     async def read_holding_registers(self, start_address, num_registers, slave_address):
-        """Read registers from an inverter. Returns None on failure."""
+        """Read registers from an inverter. Returns None on failure.
+
+        A timed-out or failed read resets the connection and is tried once
+        more on a fresh socket before giving up.
+        """
+        response = None
         async with self._lock:
-            if not await self._ensure_connected():
-                return None
-            try:
-                response = await self.client.read_holding_registers(
-                    address=start_address, count=num_registers, device_id=slave_address
-                )
-            except (ModbusException, OSError) as err:
-                _LOGGER.debug(
-                    "Reading %s registers from 0x%04X on %s failed: %s",
-                    num_registers,
-                    start_address,
-                    self.host,
-                    err,
-                )
-                return None
+            for attempt in range(1, MODBUS_READ_ATTEMPTS + 1):
+                if not await self._ensure_connected():
+                    return None
+                await self._pace()
+                try:
+                    response = await self.client.read_holding_registers(
+                        address=start_address,
+                        count=num_registers,
+                        device_id=slave_address,
+                    )
+                except (ModbusException, OSError) as err:
+                    response = None
+                    _LOGGER.debug(
+                        "Reading %s registers from 0x%04X on %s failed "
+                        "(attempt %s of %s): %s",
+                        num_registers,
+                        start_address,
+                        self.host,
+                        attempt,
+                        MODBUS_READ_ATTEMPTS,
+                        err,
+                    )
+                finally:
+                    self._last_request = time.monotonic()
+
+                if response is not None:
+                    break
+                self._reset_connection()
+
+        if response is None:
+            return None
 
         if response.isError():
             _LOGGER.debug(
@@ -96,7 +139,10 @@ class ModbusHost:
                     self.host,
                     err,
                 )
+                self._reset_connection()
                 return False
+            finally:
+                self._last_request = time.monotonic()
 
         if response.isError():
             _LOGGER.warning(
@@ -190,12 +236,19 @@ class Inverter:
         """
         blocks = {}
         for block in BLOCKS:
-            response = await self.read_holding_registers(block.start, block.count)
-            if response is None or len(response.registers) < block.count:
-                raise InverterReadError(
-                    f"incomplete read of {block.name} block (0x{block.start:04X})"
-                )
-            blocks[block.name] = response.registers
+            registers: list[int] = []
+            # Split big blocks: the inverter is slow to answer long reads.
+            for offset in range(0, block.count, MODBUS_MAX_REGISTERS_PER_READ):
+                address = block.start + offset
+                count = min(MODBUS_MAX_REGISTERS_PER_READ, block.count - offset)
+                response = await self.read_holding_registers(address, count)
+                if response is None or len(response.registers) < count:
+                    raise InverterReadError(
+                        f"incomplete read of {block.name} block (0x{address:04X}, "
+                        f"{count} registers)"
+                    )
+                registers.extend(response.registers[:count])
+            blocks[block.name] = registers
         return blocks
 
     async def write_register(self, register, value) -> bool:

@@ -128,10 +128,6 @@ REGISTERS: dict[str, Register] = {
     "max_charge_limit_power": Register(0x2125, DataType.U16, 0.001),  # W -> kW
     # Unconfirmed (Solis map): max depth of discharge. Reads 80.
     "max_depth_of_discharge": Register(0x212D),  # %
-    # 0 = auto, 1 = force charge, 2 = force discharge (from the Solis map; unconfirmed)
-    "force_charge": Register(0x212E),
-    # %, force-charge target SoC (from the Solis map; unconfirmed). Reads 80.
-    "force_charge_target_soc": Register(0x2138),
     # 0x2139 (8505): Solis map says "grid charge end SoC", but it reads 100 while
     # grid_max_charge_soc (0x2117) holds the real setting of 85. Meaning unknown.
     "unidentified_2139": Register(0x2139),

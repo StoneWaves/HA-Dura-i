@@ -105,8 +105,6 @@ These are disabled by default so read-only users never see a control that change
 - **Solar Charge Max SoC** (%) - register 8473 (`0x2119`): highest SoC the battery charges to from solar
 - **Battery Discharge Max Power** (kW) - register 8474 (`0x211A`)
 - **EPS Enabled** - register 8476 (`0x211C`)
-- **Force Charge** - register 8494 (`0x212E`): on writes 1 (force charge), off writes 0 (normal). Taken from the Solis register map and not yet confirmed on Dura-i hardware.
-- **Force Charge Target SoC** (%) - register 8504 (`0x2138`): the SoC a force charge stops at. Taken from the Solis register map and not yet confirmed on Dura-i hardware.
 - **Grid Feed In Max Power** (kW) - register 12474 (`0x30BA`)
 - **Auto Grid Charge**, **Keep Charge Window Set** and **Delay Grid Charge Start** (switches) - see [Auto Grid Charge](#auto-grid-charge). They write Grid Charge Max SoC and Charge Window 1 for you.
 

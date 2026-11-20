@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+import contextlib
 from itertools import chain
 import logging
 import math
@@ -91,11 +92,24 @@ class Controller:
     async def start_poller(self):
         """Start the async polling of inverter data."""
 
+        if self.poller_task is not None and not self.poller_task.done():
+            # Never run two pollers: they interleave requests on the adapter.
+            _LOGGER.debug("Dura-i poller already running")
+            return
+
+        loop = asyncio.get_running_loop()
+
         async def periodic():
+            # Fixed cadence: a slow poll shortens the next sleep instead of
+            # pushing every later poll back. setup_done() has just polled.
+            next_poll = loop.time() + INVERTER_POLL_INTERVAL_SECONDS
             while True:
-                # Sleep first: setup_done() has just polled.
-                await asyncio.sleep(INVERTER_POLL_INTERVAL_SECONDS)
+                await asyncio.sleep(max(0.0, next_poll - loop.time()))
                 await self.poll_inverters()
+                next_poll += INVERTER_POLL_INTERVAL_SECONDS
+                if next_poll < loop.time():
+                    # Fell a whole interval behind; don't fire a burst to catch up.
+                    next_poll = loop.time() + INVERTER_POLL_INTERVAL_SECONDS
 
         self.poller_task = self.config.async_create_background_task(
             self.hass, periodic(), "Dura-i Inverter Poll"
@@ -311,6 +325,16 @@ class Controller:
             modbus.close()
         self.modbus_hosts.clear()
 
+    async def async_terminate(self):
+        """Stop polling, wait for any poll in flight to finish, then close."""
+        task = self.poller_task
+        self.terminate()
+        if task is not None:
+            # Wait until the cancelled loop has really exited, so a reload
+            # can't briefly run the old poller alongside the new one.
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
     # ------------------------------------------------------------------
     # Platform setup
     # ------------------------------------------------------------------
@@ -343,6 +367,6 @@ class Controller:
         """Start polling once every platform has added its entities."""
         self._init_count = self._init_count + 1
         _LOGGER.debug("Entities %s setup done", name)
-        if self._init_count >= len(PLATFORMS):
+        if self._init_count == len(PLATFORMS):
             await self.poll_inverters()
             await self.start_poller()

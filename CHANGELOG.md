@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.0.0-beta.5] - 2026-11-20
+
+### Removed
+- The **Force Charge** switch (`0x212E`) and **Force Charge Target SoC** control (`0x2138`). Both came from the Solis register map and were never confirmed on Dura-i hardware. Their entities are removed from the registry on startup. Use Grid Charge Max SoC and Charge Window 1, or Auto Grid Charge, to charge from the grid.
+
+### Fixed
+- Far fewer "incomplete read" warnings. The inverter often took longer than 3 seconds to answer, so the request timed out and was re-sent up to 3 times. The adapter answered every copy, and the late replies were rejected as stale ("request ask for transaction_id=N but got id=N-1"). One slow answer could then break the rest of that poll. Each request now waits up to 5 seconds and isn't re-sent by the Modbus library. Instead, a failed read closes the connection, which discards any late replies, and is tried once more on a new connection. A failed write also resets the connection.
+- Large register blocks are read in pieces of at most 32 registers, because the inverter is slowest answering long reads such as the 64-register block at `0x1001`. A 50 ms gap is left between requests to the adapter.
+- Reloading the integration can no longer leave a second poller running alongside the new one. Two pollers interleaved their requests on the adapter and made the timeouts much worse. Polling now starts only once, and unloading waits for the poller to stop before closing the connection.
+- Polls run on a fixed 10-second schedule, so a slow poll no longer delays all the later ones.
+- The connection test when adding the integration uses the same 5-second timeout.
+
 ## [2.0.0-beta.4] - 2026-11-12
 
 ### Added

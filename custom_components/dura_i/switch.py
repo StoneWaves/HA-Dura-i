@@ -35,18 +35,6 @@ async def async_setup_entry(
                 controller, inverter, "EPS Enabled", "eps_enabled", "mdi:power-socket"
             )
         )
-        # On writes 1 (force charge), off writes 0 (normal operation). If the
-        # inverter is force-discharging (2) this shows off, and turning it off
-        # also ends the force discharge.
-        controller.switch_entities[inverter.serial_number + "_force_charge"] = (
-            InverterSwitchEntity(
-                controller,
-                inverter,
-                "Force Charge",
-                "force_charge",
-                "mdi:battery-charging-high",
-            )
-        )
 
     entities = controller.get_switch_entities()
     # Not fed by the poll, so kept out of controller.switch_entities.

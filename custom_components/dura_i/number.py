@@ -74,13 +74,6 @@ NUMBERS = (
     # Keys are kept as they were so existing entity IDs don't change.
     ("grid_max_charge_soc", "Grid Charge Max SoC", "mdi:battery-charging-high", _SOC),
     ("battery_max_soc", "Solar Charge Max SoC", "mdi:battery-arrow-up", _SOC),
-    # From the Solis map; unconfirmed on Dura-i hardware.
-    (
-        "force_charge_target_soc",
-        "Force Charge Target SoC",
-        "mdi:battery-charging-high",
-        _SOC,
-    ),
 )
 
 

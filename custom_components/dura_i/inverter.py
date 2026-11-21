@@ -14,6 +14,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from .const import (
     DOMAIN,
     INVERTER_POLL_INTERVAL_SECONDS,
+    MODBUS_FAILURES_BEFORE_RECONNECT,
     MODBUS_MAX_REGISTERS_PER_READ,
     MODBUS_READ_ATTEMPTS,
     MODBUS_REQUEST_GAP_SECONDS,
@@ -56,6 +57,9 @@ class ModbusHost:
         )
         self._lock = asyncio.Lock()
         self._last_request = 0.0
+        # Requests in a row that got no answer. One is usually a collision on
+        # the RS485 bus; only a run of them means the link itself is stuck.
+        self._consecutive_failures = 0
 
     async def _ensure_connected(self) -> bool:
         if not self.client.connected:
@@ -71,15 +75,33 @@ class ModbusHost:
         if wait > 0:
             await asyncio.sleep(wait)
 
-    def _reset_connection(self) -> None:
-        """Drop the socket so a late reply can't be matched to the next request."""
-        self.client.close()
+    def _record_success(self) -> None:
+        """Note that the inverter answered (even with a Modbus error response)."""
+        self._consecutive_failures = 0
+
+    def _record_failure(self) -> None:
+        """Count a request that got no answer; reconnect only after a run of them.
+
+        A single timeout is tolerated on the same connection: the retry goes
+        out under a new transaction id, and pymodbus discards the late reply
+        to the first request when it arrives.
+        """
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= MODBUS_FAILURES_BEFORE_RECONNECT:
+            _LOGGER.debug(
+                "%s requests in a row to %s got no answer; reconnecting",
+                self._consecutive_failures,
+                self.host,
+            )
+            self.client.close()
+            self._consecutive_failures = 0
 
     async def read_holding_registers(self, start_address, num_registers, slave_address):
         """Read registers from an inverter. Returns None on failure.
 
-        A timed-out or failed read resets the connection and is tried once
-        more on a fresh socket before giving up.
+        A read that times out is retried once straight away on the same
+        connection, so an occasional collision costs one late reading rather
+        than a reconnect.
         """
         response = None
         async with self._lock:
@@ -109,8 +131,9 @@ class ModbusHost:
                     self._last_request = time.monotonic()
 
                 if response is not None:
+                    self._record_success()
                     break
-                self._reset_connection()
+                self._record_failure()
 
         if response is None:
             return None
@@ -127,6 +150,7 @@ class ModbusHost:
         async with self._lock:
             if not await self._ensure_connected():
                 return False
+            await self._pace()
             try:
                 response = await self.client.write_register(
                     address=register, value=value, device_id=slave_address
@@ -139,10 +163,11 @@ class ModbusHost:
                     self.host,
                     err,
                 )
-                self._reset_connection()
+                self._record_failure()
                 return False
             finally:
                 self._last_request = time.monotonic()
+            self._record_success()
 
         if response.isError():
             _LOGGER.warning(

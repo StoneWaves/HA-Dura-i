@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.0.0-beta.6] - 2026-11-21
+
+### Fixed
+- An occasional collision on the RS485 bus no longer drops the connection. In beta.5, every read that got no answer closed the connection and reconnected before retrying, leaving a gap in the data. Now a read that gets no answer is retried once straight away on the same connection, and any late reply to the first request is discarded. The connection is only reset after 3 requests in a row get no answer, so an occasional collision costs one late reading instead of a reconnect.
+- The gap between requests is now 100 ms (up from 50 ms) and applies to writes as well as reads, so the bus is quiet before each request goes out.
+
 ## [2.0.0-beta.5] - 2026-11-20
 
 ### Removed

@@ -172,6 +172,8 @@ If the integration fails to connect:
 3. Check you're using pins 7 and 9 on the inverter's RS485 connector
 4. Try restarting the inverter and adapter
 
+If the log shows frequent "incomplete read" warnings, the inverter may be answering more slowly than the integration waits. Open the integration's **Configure** dialog and raise the **Modbus timeout** (default 5 seconds, 1–30 allowed). Each request is tried twice before a reading is skipped, so a long timeout also means a disconnected adapter takes longer to notice.
+
 ## Credits
 
 Based on the original [HA-Skyline](https://github.com/iPeel/HA-Skyline) integration by @iPeel.

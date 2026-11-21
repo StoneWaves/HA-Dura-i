@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [2.0.0-beta.7] - 2026-11-21 - Unreleased
+
+### Added
+- **Modbus timeout** setting in the integration's **Configure** dialog: how long to wait for the inverter to answer each request, from 1 to 30 seconds, in 0.5 s steps. The default is 5 seconds, which existing installs keep until they change it. Saving reloads the integration with the new timeout, and the connection test when saving uses it too.
+
 ## [2.0.0-beta.6] - 2026-11-21
 
 ### Fixed

@@ -32,7 +32,13 @@ from .auto_charge import (
     OPT_WINDOW_START,
     STRATEGIES,
 )
-from .const import DOMAIN, MODBUS_TIMEOUT_SECONDS
+from .const import (
+    CONF_MODBUS_TIMEOUT,
+    DOMAIN,
+    MODBUS_TIMEOUT_MAX_SECONDS,
+    MODBUS_TIMEOUT_MIN_SECONDS,
+)
+from .controller import modbus_timeout_from
 from .registers import registers_to_string
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,16 +56,17 @@ class ModbusHub:
     TODO Remove this placeholder class and replace with things from your PyPI package.
     """
 
-    def __init__(self, host: str, port: int) -> None:
+    def __init__(self, host: str, port: int, timeout: float) -> None:
         """Initialize."""
 
         self.hosts = host.replace(" ", "").split(sep=",")
         self.port = port
+        self.timeout = timeout
 
     async def checkHost(self, host, port) -> bool:
         """Test we can read the inverter serial number from the configured host."""
         client = AsyncModbusTcpClient(
-            host=host, port=port, timeout=MODBUS_TIMEOUT_SECONDS, retries=1
+            host=host, port=port, timeout=self.timeout, retries=1
         )
         try:
             await client.connect()
@@ -109,7 +116,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
 
-    hub = ModbusHub(data["host"], data["port"])
+    hub = ModbusHub(data["host"], data["port"], modbus_timeout_from(data))
 
     if not await hub.authenticate():
         raise CannotConnect
@@ -228,6 +235,17 @@ def _options_schema(hass: HomeAssistant, data: dict) -> vol.Schema:
         {
             vol.Required("host", default=data["host"]): str,
             vol.Required("port", default=data["port"]): int,
+            vol.Required(
+                CONF_MODBUS_TIMEOUT, default=modbus_timeout_from(data)
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=MODBUS_TIMEOUT_MIN_SECONDS,
+                    max=MODBUS_TIMEOUT_MAX_SECONDS,
+                    step=0.5,
+                    unit_of_measurement="s",
+                    mode="box",
+                )
+            ),
             vol.Optional(
                 OPT_FORECAST_TODAY, description=suggested(OPT_FORECAST_TODAY)
             ): sensor,

@@ -13,16 +13,32 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    CONF_MODBUS_TIMEOUT,
     IMPORT_EXPORT_MONITOR_DURATION_SECONDS,
     IMPORT_EXPORT_THRESHOLD,
     INVERTER_POLL_INTERVAL_SECONDS,
     MODBUS_MAX_SLAVE_ADDRESS,
+    MODBUS_TIMEOUT_MAX_SECONDS,
+    MODBUS_TIMEOUT_MIN_SECONDS,
+    MODBUS_TIMEOUT_SECONDS,
     PLATFORMS,
 )
 from .inverter import Inverter, InverterReadError, ModbusHost
 from .registers import decode_all, registers_to_string
 
 _LOGGER = logging.getLogger(__name__)
+
+def modbus_timeout_from(data) -> float:
+    """The Modbus timeout from the entry's settings, clamped to the allowed range.
+
+    Entries saved before the option existed fall back to the default.
+    """
+    try:
+        timeout = float(data.get(CONF_MODBUS_TIMEOUT, MODBUS_TIMEOUT_SECONDS))
+    except (TypeError, ValueError):
+        return MODBUS_TIMEOUT_SECONDS
+    return min(max(timeout, MODBUS_TIMEOUT_MIN_SECONDS), MODBUS_TIMEOUT_MAX_SECONDS)
+
 
 IDENTITY_ATTEMPTS = 5
 IDENTITY_RETRY_DELAY_SECONDS = 2
@@ -62,6 +78,7 @@ class Controller:
         self.port = port
         self.hass = hass
         self.config = entry
+        self.modbus_timeout = modbus_timeout_from(entry.data)
         self.poller_task = None
 
         self.sensor_entities = {}
@@ -268,7 +285,7 @@ class Controller:
                 host, port_text = host.split(":", 1)
                 port = int(port_text)
 
-            modbus = ModbusHost(host=host, port=port)
+            modbus = ModbusHost(host=host, port=port, timeout=self.modbus_timeout)
             self.modbus_hosts.append(modbus)
 
             for attempt in range(1, IDENTITY_ATTEMPTS + 1):

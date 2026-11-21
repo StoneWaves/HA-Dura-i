@@ -44,7 +44,9 @@ class ModbusHost:
     never interleave on the same connection.
     """
 
-    def __init__(self, host: str, port: int) -> None:
+    def __init__(
+        self, host: str, port: int, timeout: float = MODBUS_TIMEOUT_SECONDS
+    ) -> None:
         """Modbus intitialiser."""
         self.host = host
         self.port = port
@@ -52,7 +54,7 @@ class ModbusHost:
             host=self.host,
             port=self.port,
             framer=FramerType.SOCKET,
-            timeout=MODBUS_TIMEOUT_SECONDS,
+            timeout=timeout,
             retries=0,
         )
         self._lock = asyncio.Lock()

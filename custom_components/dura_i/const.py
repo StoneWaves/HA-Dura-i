@@ -12,7 +12,10 @@ INVERTER_POLL_INTERVAL_SECONDS = 10
 # wait longer, let pymodbus try once, and make one retry of our own on the same
 # connection. Only a run of unanswered requests forces a reconnect, so a
 # collision costs one late reading rather than a reconnect and a gap in data.
-MODBUS_TIMEOUT_SECONDS = 5
+MODBUS_TIMEOUT_SECONDS = 5  # default; users can change it in the options form
+CONF_MODBUS_TIMEOUT = "modbus_timeout"
+MODBUS_TIMEOUT_MIN_SECONDS = 1
+MODBUS_TIMEOUT_MAX_SECONDS = 30
 MODBUS_READ_ATTEMPTS = 2
 MODBUS_FAILURES_BEFORE_RECONNECT = 3
 # Large blocks are split into reads of at most this many registers; the

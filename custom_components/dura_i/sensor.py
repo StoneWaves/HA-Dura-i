@@ -226,7 +226,6 @@ INVERTER_SENSORS: tuple[DuraSensor, ...] = (
         device_class=SensorDeviceClass.POWER,
         decimals=2,
     ),
-    _readout("unidentified_2139", "Register 8505 (Unidentified)", "mdi:help-circle"),
 )
 
 # Created once, not per inverter. consumer_load always exists; the rest are

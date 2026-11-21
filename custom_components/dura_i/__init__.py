@@ -30,6 +30,8 @@ RETIRED_UNIQUE_ID_SUFFIXES = (
     "_discharge_window_1_current_limit",
     "_force_charge",  # force charge controls dropped in beta.5
     "_force_charge_target_soc",
+    "_unidentified_2139",  # Register 8505 sensor dropped in beta.7
+    "_delay_charge_start",  # Delay Grid Charge Start switch dropped in beta.7
 )
 
 # Older versions created the system-wide consumer load per inverter

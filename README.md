@@ -90,8 +90,6 @@ These show inverter settings without letting you change them. Everything below e
 - **Battery Reserve SoC** (%) - register 8475 (`0x211B`). Auto Grid Charge also uses this as its reserve.
 - **Max Depth of Discharge** (%) - register 8493 (`0x212D`)
 - **Max Charge Limit Power** (kW) - register 8485 (`0x2125`). Reads 9 kW, above the inverter's own limit, so its meaning is doubtful.
-- **Register 8505 (Unidentified)** - register 8505 (`0x2139`), meaning unknown
-
 ## Controllable Parameters
 
 These are disabled by default so read-only users never see a control that changes the inverter. Enable the ones you want from the device page.
@@ -106,7 +104,7 @@ These are disabled by default so read-only users never see a control that change
 - **Battery Discharge Max Power** (kW) - register 8474 (`0x211A`)
 - **EPS Enabled** - register 8476 (`0x211C`)
 - **Grid Feed In Max Power** (kW) - register 12474 (`0x30BA`)
-- **Auto Grid Charge**, **Keep Charge Window Set** and **Delay Grid Charge Start** (switches) - see [Auto Grid Charge](#auto-grid-charge). They write Grid Charge Max SoC and Charge Window 1 for you.
+- **Auto Grid Charge** and **Keep Charge Window Set** (switches) - see [Auto Grid Charge](#auto-grid-charge). They write Grid Charge Max SoC and Charge Window 1 for you.
 
 The power controls' maximums follow your inverter model, from the Dura-i G3 datasheet:
 
@@ -145,10 +143,6 @@ The target sensor's attributes show both: `minimum_target_soc` and `max_soc_befo
 6. When you're happy with it, enable the **Auto Grid Charge** switch (disabled by default). It then writes the target to Grid Charge Max SoC each night. Turning it off leaves Grid Charge Max SoC at its last value.
 
 **Keeping the charge window set.** The inverter clears Charge Window 1 to 00:00–00:00 about 10 seconds after each window ends, so without help it won't grid-charge the next night. Turn on the **Keep Charge Window Set** switch (disabled by default) and the integration writes the window back: a minute after each window ends, as the next one opens, and on every 30-minute refresh if it has been cleared or changed. It uses the same window as the planner, from the schedule helper or the fixed times, rounded to the minute. This works separately from Auto Grid Charge, so you can keep the window set while choosing Grid Charge Max SoC yourself. Its attributes show the window it will keep. With a schedule helper, the window's length comes from the schedule's last full on period in the recorder; until one has been seen, the window is left alone. While the switch is on, a window changed in the app is put back within 30 minutes.
-
-**Charging late in the window.** By default the battery charges as soon as the window opens, then sits full for hours while the grid runs the house. Turn on **Delay Grid Charge Start** (disabled by default) to move the window's start later, so the battery reaches its set point about 30 minutes before the window ends. From 30 minutes before the window opens, the start is re-planned every minute from the current SoC, the set point (the Auto Grid Charge target while that switch is on, otherwise Grid Charge Max SoC), the lower of Grid and Battery Max Charge Power, and how much the battery is expected to drain before charging starts (your usual usage for that hour). It assumes the battery charges at full set power, but allows 25 % extra charge time in case the battery holds it lower (a smaller or cold battery, for example). With the 30 minutes before the window ends, that covers charging at about 70 % of the set power, at the cost of usually finishing a little early. Once charging has started the start isn't touched again, and the window keeps its usual end, so a slower charge still has until then. The charge rate is learned from each night's charge (SoC % per kWh, shown as `learned_soc_per_kwh`); until then a cautious guess is used that starts a little early. The switch's attributes show tonight's planned start and the rates it used. It keeps the window set as well, so it works with or without **Keep Charge Window Set**.
-
-The trade-off: before charging starts, the battery runs the house, and that energy is then put back from the grid. It's all at the cheap rate, but the round trip loses roughly 10–15 %, so expect a few pence a night and a slightly deeper cycle.
 
 Nothing is chosen for you: the planner stays off until you pick the forecast sensors and set the capacity. Usage comes from the integration's own **Current Load** sensor unless you choose another energy or power sensor.
 

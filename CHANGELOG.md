@@ -4,10 +4,14 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
-## [2.0.0-beta.7] - 2026-11-21 - Unreleased
+## [2.0.0-beta.7] - 2026-11-21
 
 ### Added
 - **Modbus timeout** setting in the integration's **Configure** dialog: how long to wait for the inverter to answer each request, from 1 to 30 seconds, in 0.5 s steps. The default is 5 seconds, which existing installs keep until they change it. Saving reloads the integration with the new timeout, and the connection test when saving uses it too.
+
+### Removed
+- The **Register 8505 (Unidentified)** diagnostic sensor (`0x2139`). Its meaning was never worked out. The entity is removed from the registry on startup. The inverter config block read shrinks from 58 to 46 registers (`0x2100`–`0x212D`), now that nothing above Max Depth of Discharge is used.
+- The **Delay Grid Charge Start** switch, added in beta.4. It didn't plan the delayed start reliably. The planning, the learned charge rate and the once-a-minute re-plan are all removed, and the switch is removed from the registry on startup. Grid charging starts when the window opens again. The switch also kept the charge window set, so if you used it without **Keep Charge Window Set**, turn that on instead. Otherwise the inverter keeps whatever start time it last wrote, and clears the window after the next one ends.
 
 ## [2.0.0-beta.6] - 2026-11-21
 

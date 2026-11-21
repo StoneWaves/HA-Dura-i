@@ -33,16 +33,6 @@ for is written back to the inverter: shortly after each window ends, as the
 next one opens, and on every 30-minute refresh if it has been cleared or
 changed. This is independent of Auto Grid Charge, so the window can be kept
 while Grid Charge Max SoC is set by hand.
-
-With the Delay Grid Charge Start switch on, the window's start is moved later
-so the battery reaches its set point about 30 minutes before the window ends,
-rather than charging straight away and sitting full for hours. From 30
-minutes before the window opens, the start is re-planned every minute from
-the current SoC, the set point, the charge power, the expected drain until
-charging starts, and a charge rate learned from earlier nights. It assumes
-the battery charges at the set charge power, and allows 25 % extra charge time
-in case it's slower. Once charging has started the start is left alone. The window keeps its usual end, so a
-slow charge still has until then to finish.
 """
 
 from __future__ import annotations
@@ -120,55 +110,6 @@ REARM_DELAY = timedelta(minutes=1)
 # How far back to look for the schedule's last on/off period after a restart.
 SCHEDULE_HISTORY = timedelta(days=8)
 WINDOW_KEYS = ("charge_window_1_start", "charge_window_1_end")
-
-# Delayed start: aim to reach the set point this long before the window ends.
-LATE_FINISH_MARGIN = timedelta(minutes=30)
-# Start planning (and move the start) this long before the window opens.
-LATE_LEAD = timedelta(minutes=30)
-# Leave the inverter's start alone if it's at most this much earlier than
-# planned, so it isn't rewritten every minute.
-LATE_SLACK = timedelta(minutes=10)
-LATE_INTERVAL = timedelta(minutes=1)
-# The plan assumes the battery charges at the inverter's set charge power, but
-# the BMS (a smaller battery, or a cold one) can hold it lower. Plan as if the
-# charge takes this much longer, on top of LATE_FINISH_MARGIN. Together they
-# cover charging at about 70 % of the set power.
-CHARGE_TIME_BUFFER = 1.25
-# Until a rate has been learned: SoC % per kWh charged, as a fraction of
-# 100 / capacity. Below the ~0.8 measured on a Dura16, so it starts early.
-CHARGE_EFFICIENCY_GUESS = 0.75
-# Battery Load below this (kW, negative = charging) counts as charging.
-CHARGING_KW = -0.3
-# Learn only from charges at least this big.
-MIN_LEARN_KWH = 2.0
-# A gap this long in charging ends a charge (the hold top-ups are separate).
-CHARGE_GAP = timedelta(minutes=3)
-
-
-def plan_late_start(
-    now: datetime,
-    window_start: datetime,
-    finish_by: datetime,
-    soc: float,
-    target: float,
-    charge_pct_per_hour: float,
-    drain_pct_per_hour: float,
-) -> datetime:
-    """When to start charging so the battery reaches ``target`` at ``finish_by``.
-
-    Until charging starts the battery covers the house, so it drains at
-    ``drain_pct_per_hour``. Solves
-    charge * (finish_by - start) = target - soc + drain * (start - now)
-    for the start, kept between the window's start (or now) and finish_by.
-    """
-    if finish_by <= window_start:
-        return window_start
-    hours_left = (finish_by - now) / timedelta(hours=1)
-    hours = (charge_pct_per_hour * hours_left - (target - soc)) / (
-        charge_pct_per_hour + drain_pct_per_hour
-    )
-    start = now + timedelta(hours=hours)
-    return min(max(start, window_start, now), finish_by)
 
 
 def nearest_minute(moment: datetime) -> time:
@@ -295,12 +236,6 @@ class AutoChargeManager:
         self.config = {**DEFAULTS, **{k: v for k, v in config.items() if v not in ("", None)}}
         self.enabled = False  # set by the Auto Grid Charge switch
         self.keep_window = False  # set by the Keep Charge Window Set switch
-        self.late_charge = False  # set by the Delay Grid Charge Start switch
-        self.soc_per_kwh: float | None = None  # learned charge rate
-        self.late_details: dict = {}
-        self._charge_log: dict | None = None
-        self._load_profile: dict[int, float] | None = None
-        self._late_dirty = False  # late_details changed since entities updated
         self.target: int | None = None
         self.details: dict = {}
         self._listeners: list = []
@@ -329,9 +264,6 @@ class AutoChargeManager:
         self.hass.async_create_task(self._async_startup())
         self._unsubs.append(
             async_track_time_interval(self.hass, self._async_refresh_cb, REFRESH_INTERVAL)
-        )
-        self._unsubs.append(
-            async_track_time_interval(self.hass, self._async_minute_cb, LATE_INTERVAL)
         )
         if self.schedule:
             # Calculate and write the moment the cheap window opens, when its
@@ -433,70 +365,6 @@ class AutoChargeManager:
         self._rearm_unsub = None
         await self.async_arm_window()
 
-    async def _async_minute_cb(self, now) -> None:
-        """Learn the charge rate, and re-plan a delayed start."""
-        self._sample_charge(now)
-        if self.late_charge:
-            await self.async_arm_window()
-
-    def _values(self) -> dict:
-        """The first inverter's last poll."""
-        if not self.controller.inverters:
-            return {}
-        serial = self.controller.inverters[0].serial_number
-        return self.controller.last_values.get(serial, {})
-
-    def _notify(self) -> None:
-        for update in list(self._listeners):
-            update()
-
-    def _sample_charge(self, now: datetime) -> None:
-        """Track a grid charge's SoC rise and energy, to learn the rate."""
-        values = self._values()
-        load, soc = values.get("battery_load"), values.get("soc")
-        log = self._charge_log
-        charging = isinstance(load, (int, float)) and load < CHARGING_KW
-        if charging:
-            # Only grid charges in the window; solar charging varies too much.
-            window = self._known_window(now)
-            charging = window is not None and window[0] <= now < window[1]
-        if charging and isinstance(soc, (int, float)):
-            if log is None:
-                self._charge_log = {
-                    "first_soc": soc, "last_soc": soc, "kwh": 0.0, "last_at": now
-                }
-                return
-            step = min(now - log["last_at"], CHARGE_GAP) / timedelta(hours=1)
-            log["kwh"] += -load * step
-            log["last_soc"] = soc
-            log["last_at"] = now
-        elif log is not None and now - log["last_at"] >= CHARGE_GAP:
-            self._charge_log = None
-            self._learn(log)
-
-    def _default_soc_per_kwh(self) -> float | None:
-        capacity = float(self.config[OPT_CAPACITY])
-        return 100 / capacity * CHARGE_EFFICIENCY_GUESS if capacity > 0 else None
-
-    def _learn(self, log: dict) -> None:
-        """Update the learned SoC % per kWh from a finished charge."""
-        rise = log["last_soc"] - log["first_soc"]
-        capacity = float(self.config[OPT_CAPACITY])
-        if log["kwh"] < MIN_LEARN_KWH or rise <= 0 or capacity <= 0:
-            return
-        ideal = 100 / capacity
-        rate = min(max(rise / log["kwh"], 0.5 * ideal), 1.2 * ideal)
-        self.soc_per_kwh = (
-            rate if self.soc_per_kwh is None else (self.soc_per_kwh + rate) / 2
-        )
-        _LOGGER.info(
-            "Delay grid charge: learned %.2f %% per kWh (%s %% from %.1f kWh)",
-            self.soc_per_kwh,
-            rise,
-            log["kwh"],
-        )
-        self._notify()
-
     async def _async_write_cb(self, _now) -> None:
         await self.async_write_target()
 
@@ -581,7 +449,6 @@ class AutoChargeManager:
         if consumption is None:
             return None, {"reason": "No consumption sensor found"}
         profile = await self._async_hourly_profile(consumption)
-        self._load_profile = profile
         if profile is None:
             return None, {
                 "reason": f"No usage history for {consumption} yet; it needs a "
@@ -779,114 +646,13 @@ class AutoChargeManager:
         if window is None:
             return None
         start_dt, end_dt = window
-        if self.late_charge and start_dt - LATE_LEAD <= now < end_dt:
-            start_dt = self._late_start(now, start_dt, end_dt)
-        elif self.late_details:
-            self.late_details = {}
-            self._late_dirty = True
         return nearest_minute(start_dt), nearest_minute(end_dt)
-
-    def _inverter_start(self, window_start: datetime, end: datetime) -> datetime | None:
-        """The inverter's current window start, as a moment in this window."""
-        current = self._values().get("charge_window_1_start")
-        if not isinstance(current, time):
-            return None
-        moment = datetime.combine(window_start.date(), current, tzinfo=window_start.tzinfo)
-        if moment < window_start.replace(second=0, microsecond=0):
-            moment += timedelta(days=1)
-        return moment if moment < end else None
-
-    def _late_start(self, now: datetime, window_start: datetime, end: datetime) -> datetime:
-        """The delayed start for this window (see plan_late_start)."""
-        current = self._inverter_start(window_start, end)
-        if current is not None and current <= now:
-            # Charging has started (or the window opened as planned): leave it.
-            self._set_late_details({"status": "charging", "start": current})
-            return current
-
-        values = self._values()
-        soc = values.get("soc")
-        target = self.target if self.enabled and self.target is not None else values.get(
-            "grid_max_charge_soc"
-        )
-        powers = [
-            values.get(key)
-            for key in ("grid_max_charge_power", "battery_max_charge_power")
-        ]
-        powers = [p for p in powers if isinstance(p, (int, float)) and p > 0]
-        capacity = float(self.config[OPT_CAPACITY])
-        soc_per_kwh = self.soc_per_kwh or self._default_soc_per_kwh()
-        if not (
-            isinstance(soc, (int, float))
-            and isinstance(target, (int, float))
-            and powers
-            and soc_per_kwh
-        ):
-            reason = (
-                "Set the battery capacity in the integration options"
-                if capacity <= 0
-                else "Waiting for the inverter's SoC, set point and charge power"
-            )
-            self._set_late_details({"status": "full window", "reason": reason})
-            return window_start
-
-        charge_kw = min(powers) / 1000
-        if self._load_profile:
-            load_kw = self._load_profile[now.hour]
-        else:
-            load_kw = max(0.0, float(values.get("battery_load") or 0))
-        charge_rate = soc_per_kwh * charge_kw
-        drain_rate = load_kw * 100 / capacity
-        finish_by = end - LATE_FINISH_MARGIN
-        planned = plan_late_start(
-            now,
-            window_start,
-            finish_by,
-            soc,
-            target,
-            charge_rate / CHARGE_TIME_BUFFER,
-            drain_rate,
-        )
-        start = planned
-        if current is not None and planned - LATE_SLACK <= current <= planned:
-            start = current  # close enough: finishes a little early
-        self._set_late_details(
-            {
-                "status": "waiting",
-                "start": start,
-                "planned_start": planned,
-                "finish_by": finish_by,
-                "soc": soc,
-                "set_point": target,
-                "charge_rate_pct_per_hour": round(charge_rate, 1),
-                "charge_time_buffer_pct": round((CHARGE_TIME_BUFFER - 1) * 100),
-                "drain_pct_per_hour": round(drain_rate, 1),
-            }
-        )
-        return start
-
-    def _set_late_details(self, details: dict) -> None:
-        """Record the delayed-start plan; async_arm_window tells the entities.
-
-        Not notified from here: this runs inside window_times, which entity
-        attributes call too, and writing state from there would re-enter.
-        """
-        shown = {
-            key: (nearest_minute(value).strftime("%H:%M") if isinstance(value, datetime) else value)
-            for key, value in details.items()
-        }
-        if shown != self.late_details:
-            self.late_details = shown
-            self._late_dirty = True
 
     async def async_arm_window(self) -> None:
         """Write the charge window to the inverters if it was cleared or differs."""
-        if not (self.keep_window or self.late_charge):
+        if not self.keep_window:
             return
         window = self.window_times()
-        if self._late_dirty:
-            self._late_dirty = False
-            self._notify()
         if window is None:
             _LOGGER.debug(
                 "Keep charge window: window from %s not known yet", self.schedule
@@ -1077,58 +843,3 @@ class KeepChargeWindowSwitch(SwitchEntity, RestoreEntity):
         """Stop writing the window; the inverter keeps whatever it has."""
         self._manager.keep_window = False
         self.async_write_ha_state()
-
-
-class DelayChargeStartSwitch(SwitchEntity, RestoreEntity):
-    """Moves the window's start so charging finishes just before it ends."""
-
-    _attr_has_entity_name = True
-    _attr_name = "Delay Grid Charge Start"
-    _attr_icon = "mdi:timer-sand"
-    _attr_entity_category = EntityCategory.CONFIG
-    _attr_unique_id = "dura_i_delay_charge_start"
-    # Changes the inverter, so users opt in, like the other controls.
-    _attr_entity_registry_enabled_default = False
-
-    def __init__(self, manager: AutoChargeManager) -> None:
-        """Create the switch."""
-        self._manager = manager
-        self._attr_device_info = _device_info(manager)
-        self.entity_id = generate_entity_id(
-            "switch.{}", "dura_i_delay_charge_start", [], None
-        )
-
-    async def async_added_to_hass(self) -> None:
-        """Restore the switch and the learned charge rate."""
-        last = await self.async_get_last_state()
-        self._manager.late_charge = last is not None and last.state == "on"
-        if last is not None:
-            learned = last.attributes.get("learned_soc_per_kwh")
-            if isinstance(learned, (int, float)) and learned > 0:
-                self._manager.soc_per_kwh = float(learned)
-        self.async_on_remove(self._manager.add_listener(self.async_write_ha_state))
-
-    @property
-    def is_on(self) -> bool:
-        """Whether the window's start is moved later each night."""
-        return self._manager.late_charge
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        """Tonight's plan, and the charge rate it uses."""
-        attrs = dict(self._manager.late_details)
-        if self._manager.soc_per_kwh is not None:
-            attrs["learned_soc_per_kwh"] = round(self._manager.soc_per_kwh, 3)
-        return attrs
-
-    async def async_turn_on(self, **kwargs) -> None:
-        """Delay the start from tonight; also keeps the window set."""
-        self._manager.late_charge = True
-        self.async_write_ha_state()
-        await self._manager.async_arm_window()
-
-    async def async_turn_off(self, **kwargs) -> None:
-        """Charge from the window's usual start again."""
-        self._manager.late_charge = False
-        self.async_write_ha_state()
-        await self._manager.async_arm_window()

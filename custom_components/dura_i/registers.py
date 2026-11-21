@@ -62,7 +62,7 @@ BLOCKS: tuple[Block, ...] = (
     Block("grid_power", 0x1300, 63),
     Block("eps", 0x1350, 19),
     Block("battery", 0x2000, 19),
-    Block("inverter_config", 0x2100, 58),  # 0x2100-0x2139 (up to unidentified_2139)
+    Block("inverter_config", 0x2100, 46),  # 0x2100-0x212D (up to max_depth_of_discharge)
     Block("grid_config", 0x30B0, 12),
 )
 # The Solis map's input registers (function 04), such as the clock at 3021 and
@@ -128,9 +128,6 @@ REGISTERS: dict[str, Register] = {
     "max_charge_limit_power": Register(0x2125, DataType.U16, 0.001),  # W -> kW
     # Unconfirmed (Solis map): max depth of discharge. Reads 80.
     "max_depth_of_discharge": Register(0x212D),  # %
-    # 0x2139 (8505): Solis map says "grid charge end SoC", but it reads 100 while
-    # grid_max_charge_soc (0x2117) holds the real setting of 85. Meaning unknown.
-    "unidentified_2139": Register(0x2139),
     # --- Grid settings (0x30B0 block, writable) ---
     "grid_max_feed_in_power": Register(0x30BA),  # W
 }
